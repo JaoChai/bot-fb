@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\FollowUp\FollowUpQuotaService;
 use App\Services\FollowUp\FollowUpSalesProjector;
 use App\Services\FollowUp\FollowUpSendService;
+use App\Services\FollowUp\FollowUpTelegramService;
 use App\Services\LINEService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
@@ -203,6 +204,29 @@ class SendTest extends TestCase
             'created_at' => self::NOW,
             'updated_at' => self::NOW,
         ], $overrides));
+    }
+
+    /**
+     * แถว automatic ที่ผ่าน A1 ครบทุกข้อ: mode automatic, อยู่ใน host list, อายุ 30 วัน,
+     * G3 มั่นใจ 0.90 / declined 0.10, เช็คสะอาด, revision 1 ข้อความตรงร่าง, state new
+     */
+    private function seedAutomaticReady(array $logOverrides = [], array $approvalOverrides = []): array
+    {
+        $seed = $this->seedReady(array_merge([
+            'owner_action' => 'automatic',
+            'owner_action_at' => '2026-11-16 09:55:00',
+            'owner_telegram_user_id' => null,
+            'group_code' => 'G3',
+            'group_confidence' => 0.9,
+            'declined_score' => 0.1,
+        ], $logOverrides), array_merge([
+            'telegram_delivery_state' => 'new',
+        ], $approvalOverrides));
+
+        config(['customer_follow_up.automatic_bot_ids' => [$seed['bot']->id]]);
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_mode' => 'automatic']);
+
+        return $seed;
     }
 
     private function addMessage(int $conversationId, string $sender, string $at, string $content): int
@@ -1654,6 +1678,441 @@ class SendTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // B3a — กติกาฝั่ง automatic: ปลอม = fail closed, กติกาเปลี่ยนก่อนยิง = การ์ด
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_forged_automatic_with_human_id_bad_revision_bad_checks_or_missing_timestamp_is_blocked(): void
+    {
+        // แถว automatic ที่โครงสร้างผิดจากที่ pipeline เขียนได้ — fail closed:
+        // บล็อกแบบไม่เขียน ไม่ยิง ไม่มีการ์ด (ห้าม "ซ่อม" แถวที่อาจถูกปลอม)
+        $cases = [
+            'human_telegram_id' => function (array $seed): array {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['owner_telegram_user_id' => '555']);
+
+                return $seed;
+            },
+            'missing_decision_timestamp' => function (array $seed): array {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['owner_action_at' => null]);
+
+                return $seed;
+            },
+            'bad_revision' => function (array $seed): array {
+                DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['revision' => 2]);
+
+                return $seed;
+            },
+            'text_off_the_draft' => function (array $seed): array {
+                DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['text' => self::TEXT.'?']);
+
+                return $seed;
+            },
+            'flagged_check' => function (array $seed): array {
+                DB::table('follow_up_approvals')->where('id', $seed['approvalId'])->update(['check_answers' => $this->flaggedCheck()]);
+
+                return $seed;
+            },
+        ];
+
+        foreach ($cases as $label => $mutate) {
+            $seed = $this->seedAutomaticReady();
+            $seed = $mutate($seed);
+            $before = $this->snapshot($seed);
+            $telegram = Mockery::mock(FollowUpTelegramService::class);
+            $telegram->shouldReceive('publish')->never();
+            app()->instance(FollowUpTelegramService::class, $telegram);
+            $this->fakeNothing();
+
+            $result = $this->send($seed);
+
+            $this->assertSame('blocked', $result, "เคส {$label} ต้อง blocked");
+            Http::assertNothingSent();
+            $this->assertSame($before, $this->snapshot($seed), "เคส {$label} ห้ามแตะคอลัมน์ใด");
+        }
+    }
+
+    #[Test]
+    public function test_send_rechecks_each_a1_condition(): void
+    {
+        $this->fakeLine();
+
+        // baseline: ทุกเงื่อนไข A1 ผ่านตอนตัดสินและตอนยิง → ยิงได้ครั้งเดียว
+        $seed = $this->seedAutomaticReady();
+        $this->assertSame('sent', $this->send($seed));
+        $this->assertPushCount(1);
+
+        // เปลี่ยนทีละเงื่อนไข "ระหว่างร่างกับยิง" (baseline + หนึ่งสิ่งที่เปลี่ยน) —
+        // กติกาอัตโนมัติพังก่อนยิง → คืนเป็นการ์ดปกติ ยิงไม่ได้เลย
+        $cases = [
+            'mode_back_to_approve' => function (array $seed): string {
+                DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_mode' => 'approve']);
+
+                return 'auto_mode_approve';
+            },
+            'switch_off' => function (array $seed): string {
+                DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
+
+                return 'auto_switch_off';
+            },
+            'host_removed' => function (array $seed): string {
+                config(['customer_follow_up.automatic_bot_ids' => []]);
+
+                return 'auto_not_allowed';
+            },
+            'younger_than_14_days' => function (array $seed): string {
+                DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_started_at' => '2026-11-10 10:00:00']);
+
+                return 'auto_not_allowed';
+            },
+            'group_g1' => function (array $seed): string {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['group_code' => 'G1']);
+
+                return 'auto_group';
+            },
+            'confidence_below' => function (array $seed): string {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['group_confidence' => 0.7]);
+
+                return 'auto_confidence';
+            },
+            'declined_at_threshold' => function (array $seed): string {
+                DB::table('lead_recovery_logs')->where('id', $seed['logId'])->update(['declined_score' => 0.5]);
+
+                return 'auto_declined';
+            },
+        ];
+
+        foreach ($cases as $label => $mutate) {
+            $seed = $this->seedAutomaticReady();
+            $reason = $mutate($seed);
+            $telegram = Mockery::mock(FollowUpTelegramService::class);
+            $telegram->shouldReceive('publish')->once()->with($seed['approvalId'], Mockery::any())->andReturn('sent');
+            app()->instance(FollowUpTelegramService::class, $telegram);
+
+            $result = $this->send($seed);
+
+            $this->assertSame('blocked', $result, "เคส {$label} ต้องไม่ยิง");
+            $log = $this->logRow($seed);
+            $this->assertSame('pending', $log->delivery_status, "เคส {$label}: คืนเป็นคู่ pending");
+            $this->assertSame($reason, $log->reason_code, "เคส {$label}: reason code ของกฎ");
+            $this->assertNull($log->owner_action, "เคส {$label}: ล้าง owner_action");
+            $this->assertNull($log->owner_action_at, "เคส {$label}: ล้าง owner_action_at");
+            $this->assertNull($log->owner_telegram_user_id, "เคส {$label}: ล้าง telegram id");
+            $this->assertNull($log->claim_token, "เคส {$label}: ล้าง claim");
+            $this->assertNull($log->claimed_at, "เคส {$label}: ล้าง claimed_at");
+            $this->assertNull($log->retry_key, "เคส {$label}: ล้าง retry key");
+            $this->assertNull($log->first_push_at, "เคส {$label}: ยังไม่เคยยิง");
+            $this->assertSame('pending', $this->approvalRow($seed)->status, "เคส {$label}: บัตรกลับ pending");
+            $this->assertSame(self::TEXT, $log->draft, "เคส {$label}: ข้อความคงเดิม");
+            $this->assertSame('2026-11-16 12:00:00', (string) $this->approvalRow($seed)->expires_at, "เคส {$label}: หมดอายุคงเดิม");
+            $this->assertPushCount(1, "เคส {$label} ห้ามเพิ่ม push");
+        }
+    }
+
+    #[Test]
+    public function test_mode_switch_before_first_push_reverts_to_normal_card(): void
+    {
+        $seed = $this->seedAutomaticReady();
+        // เจ้าของสลับโหมดกลับ approve ระหว่าง "ร่างพร้อม" กับ "ยิง" — kill switch ต้องได้การ์ดปกติ
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_mode' => 'approve']);
+        $telegram = Mockery::mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->once()->with($seed['approvalId'], Mockery::any())->andReturn('sent');
+        app()->instance(FollowUpTelegramService::class, $telegram);
+        $this->fakeNothing();
+
+        $result = $this->send($seed);
+
+        $this->assertSame('blocked', $result);
+        Http::assertNothingSent();
+        $log = $this->logRow($seed);
+        $this->assertSame('pending', $log->delivery_status);
+        $this->assertSame('auto_mode_approve', $log->reason_code);
+        $this->assertNull($log->owner_action);
+        $this->assertNull($log->owner_action_at);
+        $this->assertNull($log->owner_telegram_user_id);
+        $this->assertNull($log->claim_token);
+        $this->assertNull($log->claimed_at);
+        $this->assertNull($log->retry_key);
+        $this->assertNull($log->first_push_at);
+        $this->assertSame(self::TEXT, $log->draft);
+        $approval = $this->approvalRow($seed);
+        $this->assertSame('pending', $approval->status);
+        $this->assertSame(1, $approval->revision);
+        $this->assertSame(self::TEXT, $approval->text);
+        $this->assertSame('2026-11-16 12:00:00', (string) $approval->expires_at);
+        $this->assertSame('new', $approval->telegram_delivery_state);
+    }
+
+    #[Test]
+    public function test_switch_off_before_first_push_reverts_to_normal_card(): void
+    {
+        $seed = $this->seedAutomaticReady();
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
+        $telegram = Mockery::mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->once()->with($seed['approvalId'], Mockery::any())->andReturn('sent');
+        app()->instance(FollowUpTelegramService::class, $telegram);
+        $this->fakeNothing();
+
+        $result = $this->send($seed);
+
+        $this->assertSame('blocked', $result);
+        Http::assertNothingSent();
+        $log = $this->logRow($seed);
+        $this->assertSame('pending', $log->delivery_status);
+        $this->assertSame('auto_switch_off', $log->reason_code);
+        $this->assertNull($log->owner_action);
+        $this->assertSame('pending', $this->approvalRow($seed)->status);
+        $this->assertNull($log->first_push_at);
+    }
+
+    #[Test]
+    public function test_double_dispatch_one_push(): void
+    {
+        $seed = $this->seedAutomaticReady();
+        $this->fakeLine();
+
+        $this->assertSame('sent', $this->send($seed));
+        $this->assertSame('already_sent', $this->send($seed));
+
+        $this->assertPushCount(1);
+        $this->assertSame('sent', $this->logRow($seed)->delivery_status);
+        $this->assertSame(1, (int) DB::table('messages')->where('id', (int) $this->logRow($seed)->message_id)->count());
+    }
+
+    #[Test]
+    public function test_crash_after_freeze_never_reopens_card(): void
+    {
+        // แถว automatic ที่ freeze แล้ว (อาจกำลังยิง / ยิงไปแล้ว ไม่รู้ผล) ประตูเปลี่ยน —
+        // จบ acceptance_unknown เท่านั้น ห้ามกลายเป็นการ์ดที่กดได้ (A11/A16) และห้ามยิงซ้ำ
+        $seed = $this->seedAutomaticReady([
+            'delivery_status' => 'retry',
+            'retry_key' => $this->retryKey(),
+            'first_push_at' => self::NOW,
+            'message_sent' => self::TEXT,
+            'attempt_number' => 1,
+            'next_attempt_at' => '2026-11-16 10:01:00',
+            'reason_code' => 'line_retryable',
+        ], ['status' => 'sending']);
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_mode' => 'approve']);
+        $telegram = Mockery::mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->never();
+        app()->instance(FollowUpTelegramService::class, $telegram);
+        $this->fakeNothing();
+
+        $result = $this->send($seed, '2026-11-16 10:01:00');
+
+        $this->assertSame('failed', $result);
+        Http::assertNothingSent();
+        $log = $this->logRow($seed);
+        $this->assertSame('send_failed', $log->delivery_status);
+        $this->assertSame('acceptance_unknown_gate_changed', $log->reason_code);
+        $this->assertSame('cancelled', $this->approvalRow($seed)->status);
+        $this->assertSame(self::NOW, $log->first_push_at);
+        $this->assertSame(self::TEXT, $log->message_sent);
+        $this->assertSame(1, (int) $log->attempt_number);
+        $this->assertNull($log->message_id);
+        $this->assertClaimCleared($seed);
+    }
+
+    #[Test]
+    public function test_retry_reuses_frozen_key_payload_and_existing_limits(): void
+    {
+        $seed = $this->seedAutomaticReady();
+        $this->fakeLine(push: [['{}', 503], 'timeout', ['{}', 200, ['x-line-request-id' => 'req-auto-3']]]);
+
+        $this->assertSame('retry', $this->send($seed));
+        $log = $this->logRow($seed);
+        $this->assertSame('retry', $log->delivery_status);
+        $this->assertSame(1, (int) $log->attempt_number);
+        $this->assertSame('2026-11-16 10:01:00', (string) $log->next_attempt_at);
+        $this->assertSame(self::NOW, $log->first_push_at);
+        $this->assertSame(self::TEXT, $log->message_sent);
+        $storedKey = (string) $log->retry_key;
+
+        $this->assertSame('retry', $this->send($seed, '2026-11-16 10:01:00'));
+        $this->assertSame(2, (int) $this->logRow($seed)->attempt_number);
+
+        $this->assertSame('sent', $this->send($seed, '2026-11-16 10:06:00'));
+        $this->assertPushCount(3);
+
+        $this->assertCount(3, $this->pushes);
+        foreach ($this->pushes as $index => $push) {
+            $n = $index + 1;
+            $this->assertSame($this->pushes[0][0], $push[0], "request {$n} ต้องใช้ key เดิม");
+            $this->assertSame(json_decode($this->pushes[0][1], true), json_decode($push[1], true), "request {$n} ต้องมี body เดิม");
+        }
+        $this->assertSame($storedKey, (string) $this->logRow($seed)->retry_key);
+        $this->assertSame(self::NOW, $this->logRow($seed)->first_push_at, 'first_push_at คงเวลายิงแรก');
+    }
+
+    #[Test]
+    public function test_sender_reads_a1_after_last_look_and_before_freeze(): void
+    {
+        // A14: กฎ A1 ต้องถูกอ่านซ้ำจากฐานข้อมูล "หลัง" last look และ "ก่อน" freeze UPDATE
+        // — พิสูจน์ด้วยลำดับคิวรี่จริง: มี select bot_settings อยู่ระหว่างสองคำสั่งนั้น
+        $seed = $this->seedAutomaticReady();
+        $this->fakeLine();
+        $order = [];
+        DB::connection()->beforeExecuting(function ($query) use (&$order): void {
+            $sql = strtolower(trim((string) $query));
+            if (str_contains($sql, 'select max("id") as "aggregate" from "messages"')) {
+                $order[] = 'last_look';
+            } elseif (str_contains($sql, 'from "bot_settings"')) {
+                $order[] = 'settings';
+            } elseif (str_starts_with($sql, 'update "lead_recovery_logs"') && str_contains($sql, 'first_push_at')) {
+                $order[] = 'freeze';
+            }
+        });
+
+        $this->assertSame('sent', $this->send($seed));
+
+        DB::connection()->beforeExecuting(function (): void {});
+
+        $freeze = null;
+        foreach ($order as $index => $step) {
+            if ($step === 'freeze') {
+                $freeze = $index;
+                break;
+            }
+        }
+        $lastLook = null;
+        foreach ($order as $index => $step) {
+            if ($step === 'last_look' && $freeze !== null && $index < $freeze) {
+                $lastLook = $index;
+            }
+        }
+        $this->assertNotNull($freeze, 'freeze update ต้องวิ่ง: '.implode(',', $order));
+        $this->assertNotNull($lastLook, 'last look query ต้องวิ่งก่อน freeze: '.implode(',', $order));
+        $between = array_slice($order, $lastLook + 1, $freeze - $lastLook - 1);
+        $this->assertContains('settings', $between, 'A1 re-read (bot_settings) ต้องอยู่ระหว่าง last look กับ freeze: '.implode(',', $order));
+    }
+
+    #[Test]
+    public function test_gate_change_during_send_flow_stops_the_push_before_freeze(): void
+    {
+        // A14 แบบมีเงื่อนไขเปลี่ยนจริง "ระหว่างสายยิง": Step A ผ่านหมด แล้ว kill switch
+        // โดนปิดพอดีหลัง last look ยิง — ต้องอ่านเจอและคืนการ์ด ห้ามยิงออก LINE
+        $seed = $this->seedAutomaticReady();
+        $this->fakeLine();
+        $telegram = Mockery::mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->once()->with($seed['approvalId'], Mockery::any())->andReturn('sent');
+        app()->instance(FollowUpTelegramService::class, $telegram);
+        $flipped = false;
+        DB::connection()->beforeExecuting(function ($query) use (&$flipped, $seed): void {
+            $sql = strtolower(trim((string) $query));
+            if (! $flipped && str_contains($sql, 'select max("id") as "aggregate" from "messages"')) {
+                $flipped = true;
+                DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
+            }
+        });
+
+        $result = $this->send($seed);
+
+        DB::connection()->beforeExecuting(function (): void {});
+
+        $this->assertSame('blocked', $result);
+        // โควต้า GET อ่านก่อน freeze ตามปกติ (step 5) — สิ่งที่ห้ามเกิดคือ push
+        $this->assertPushCount(0, 'กติกาพังหลัง last look ต้องไม่ยิงออก LINE');
+        $log = $this->logRow($seed);
+        $this->assertSame('pending', $log->delivery_status, 'ต้องคืนเป็นคู่ pending');
+        $this->assertSame('auto_switch_off', $log->reason_code);
+        $this->assertNull($log->owner_action);
+        $this->assertNull($log->owner_action_at, 'ล้างเวลาตัดสินด้วย');
+        $this->assertNull($log->owner_telegram_user_id, 'ล้าง telegram id ด้วย');
+        $this->assertNull($log->claim_token);
+        $this->assertNull($log->claimed_at, 'ล้าง claimed_at ด้วย');
+        $this->assertNull($log->retry_key, 'ล้าง retry key ที่ claim ให้ไปด้วย');
+        $this->assertSame(0, (int) $log->attempt_number, 'ห้ามนับ attempt เมื่อไม่ได้ยิง');
+        $this->assertNull($log->first_push_at, 'ห้าม freeze เมื่อกติกาพังก่อนยิง');
+        $this->assertSame('pending', $this->approvalRow($seed)->status);
+    }
+
+    #[Test]
+    public function test_stale_claim_sending_row_with_gate_change_falls_back_to_card(): void
+    {
+        // A20: worker ตายก่อน freeze ทิ้งแถว sending/sending ถือ token เก่า — reconcile
+        // ไม่เลือกแถว sending ดังนั้นตัวส่งต้องรับช่วง claim ที่ค้างเกิน 10 นาทีเอง
+        // แล้วคืนการ์ดปกติตามกติกา ไม่ปล่อยแถวค้างตายตลอด
+        $seed = $this->seedAutomaticReady([
+            'delivery_status' => 'sending',
+            'claim_token' => 'dead-claim-token',
+            'claimed_at' => '2026-11-16 09:30:00',
+            'updated_at' => '2026-11-16 09:30:00',
+            'retry_key' => $this->retryKey(),
+        ], ['status' => 'sending']);
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
+        $telegram = Mockery::mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->once()->with($seed['approvalId'], Mockery::any())->andReturn('sent');
+        app()->instance(FollowUpTelegramService::class, $telegram);
+        $this->fakeNothing();
+
+        $result = $this->send($seed);
+
+        $this->assertSame('blocked', $result);
+        Http::assertNothingSent();
+        $log = $this->logRow($seed);
+        $this->assertSame('pending', $log->delivery_status);
+        $this->assertSame('auto_switch_off', $log->reason_code);
+        $this->assertNull($log->owner_action);
+        $this->assertNull($log->owner_action_at);
+        $this->assertNull($log->owner_telegram_user_id);
+        $this->assertNull($log->claim_token);
+        $this->assertNull($log->claimed_at);
+        $this->assertNull($log->retry_key);
+        $this->assertNull($log->first_push_at);
+        $this->assertSame('pending', $this->approvalRow($seed)->status);
+    }
+
+    #[Test]
+    public function test_expired_claimed_automatic_row_gate_change_ends_expired_without_card(): void
+    {
+        // บัตรหมดอายุ + กติกาพัง บนแถวที่ยังถือ claim ค้าง — ปลด claim ด้วยจุดจบ expired
+        // ตามเดิม (ไม่มีงานไหนเลือกแถว sending ค้าง) และห้ามมีการ์ดที่กดได้เด็ดขาด
+        $seed = $this->seedAutomaticReady([
+            'delivery_status' => 'sending',
+            'claim_token' => 'dead-claim-token',
+            'claimed_at' => '2026-11-16 09:30:00',
+            'updated_at' => '2026-11-16 09:30:00',
+            'retry_key' => $this->retryKey(),
+        ], ['status' => 'sending', 'expires_at' => '2026-11-16 09:00:00']);
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
+        $telegram = Mockery::mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->never();
+        app()->instance(FollowUpTelegramService::class, $telegram);
+        $this->fakeNothing();
+
+        $result = $this->send($seed);
+
+        $this->assertSame('blocked', $result);
+        Http::assertNothingSent();
+        $log = $this->logRow($seed);
+        $this->assertSame('expired', $log->delivery_status);
+        $this->assertSame('expired_before_send', $log->reason_code);
+        $this->assertSame('expired', $this->approvalRow($seed)->status);
+        $this->assertClaimCleared($seed);
+        $this->assertNull($log->first_push_at);
+    }
+
+    #[Test]
+    public function test_expired_unclaimed_automatic_row_gate_change_blocks_without_write(): void
+    {
+        // บัตรหมดอายุ + กติกาพัง บนคู่ approved ที่ยังไม่ถูกยืม — ไม่เขียนอะไรเลย
+        // (reconciler เป็นคนปลดคู่นี้ตามปกติ) และไม่มีการ์ด
+        $seed = $this->seedAutomaticReady([], ['expires_at' => '2026-11-16 09:00:00']);
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
+        $telegram = Mockery::mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->never();
+        app()->instance(FollowUpTelegramService::class, $telegram);
+        $this->fakeNothing();
+        $before = $this->snapshot($seed);
+
+        $result = $this->send($seed);
+
+        $this->assertSame('blocked', $result);
+        Http::assertNothingSent();
+        $this->assertSame($before, $this->snapshot($seed), 'หมดอายุและไม่ถือ claim = ไม่เขียนอะไร');
+    }
+
+    // ------------------------------------------------------------------
     // Rejected — จบทันที ไม่มีประวัติ ครั้งถัดไปเงียบ
     // ------------------------------------------------------------------
 
@@ -1927,7 +2386,7 @@ class SendTest extends TestCase
         $seed = $this->seedReady();
         $this->fakeLine();
 
-        $service = Mockery::mock(FollowUpSendService::class, [app(LINEService::class), app(FollowUpQuotaService::class)])
+        $service = Mockery::mock(FollowUpSendService::class, [app(LINEService::class), app(FollowUpQuotaService::class), app(FollowUpTelegramService::class)])
             ->makePartial()
             ->shouldAllowMockingProtectedMethods()
             ->shouldReceive('broadcastAccepted')
