@@ -1837,6 +1837,9 @@ class ScanJobTest extends TestCase
         DB::table('bot_settings')->where('bot_id', $bot->id)->update(['follow_up_enabled' => false]);
         config(['customer_follow_up.bot_ids' => [$bot->id]]);
 
+        // sending ยังสด = ไม่เสนอ (claim ยังทำงานอยู่) — seed ก่อนเพื่อให้ id ต่ำสุด
+        // ให้กฎ 120 วิเป็นตัวตัดแถวนี้เอง ไม่ใช่เพดาน 5 (กฎหาย = แถวนี้ต้องถูกเสนอและเทสต้องล้ม)
+        $youngSendingId = $this->seedSentAutoNotice($bot, ['telegram_delivery_state' => 'sending', 'updated_at' => '2026-11-16 09:59:40']);
         $ids = [];
         foreach (range(0, 3) as $index) {
             $ids[] = $this->seedSentAutoNotice($bot);
@@ -1846,8 +1849,6 @@ class ScanJobTest extends TestCase
         // eligible ตัวที่หก — เพดาน 5 ต่อบอทต่อสแกนต้องตัดมัน (เก่าสุด id น้อยสุดได้เปรียบ)
         // แถวนี้ stale พอสมควรถูกเสนอได้ทุกประการ เกินได้เพียงเพดานเท่านั้นที่ตัด
         $cappedByLimitId = $this->seedSentAutoNotice($bot, ['telegram_delivery_state' => 'sending', 'updated_at' => '2026-11-16 09:57:30']);
-        // sending ยังสด = ไม่เสนอ (claim ยังทำงานอยู่)
-        $youngSendingId = $this->seedSentAutoNotice($bot, ['telegram_delivery_state' => 'sending', 'updated_at' => '2026-11-16 09:59:40']);
         // แจ้งแล้ว = ไม่เสนอ
         $noticedId = $this->seedSentAutoNotice($bot, ['telegram_delivery_state' => 'sent']);
         Queue::fake();
