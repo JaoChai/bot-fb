@@ -539,6 +539,73 @@ class ReconcileJobTest extends TestCase
         $this->assertInfo(0, 1);
     }
 
+    // ------------------------------------------------------------------
+    // B3b — แถว automatic กับ sweep: คู่ที่ยิงไม่ทันหมดอายุตามปกติ ส่วนที่ยิงแล้ว
+    // (first_push set) ห้ามโดน sweep หมดอายุ — ReconcileCustomerFollowUps ไม่ถูกแก้
+    // ------------------------------------------------------------------
+
+    public function test_auto_unpushed_expires_and_never_reopens(): void
+    {
+        $this->seedWorld();
+        $row = $this->card('approved', [
+            'telegram_delivery_state' => 'new',
+            'telegram_chat_id' => null,
+            'telegram_message_id' => null,
+        ], [
+            'owner_action' => 'automatic',
+            'owner_action_at' => self::OLD,
+            'owner_telegram_user_id' => null,
+            'group_code' => 'G3',
+            'group_confidence' => 0.86,
+        ]);
+        $before = $this->snapshot($row);
+
+        $this->runJob();
+
+        $this->assertExpired($row, $before, false);
+        $this->assertSame('automatic', (string) $this->snapshot($row)['log']['owner_action'], 'การหมดอายุไม่ลบร่องรอย automatic');
+        $this->assertSame([$row['approvalId']], $this->refreshIds, 'sweep พยายาม repaint ตามปกติ — blocked เพราะไม่มีการ์ด');
+        $this->assertSame(['blocked'], $this->refreshResults);
+        Http::assertNothingSent();
+
+        // หมดอายุแล้วห้ามฟื้น: สแกน (สวิตช์ปิด) ไม่คิวงาน ไม่เขียน แถวคงเดิมทุกไบต์
+        config(['customer_follow_up.bot_ids' => [$this->world['bot']->id]]);
+        $expiredSnapshot = $this->snapshot($row);
+        $this->resetObservations();
+
+        $this->runScan();
+
+        Queue::assertNothingPushed();
+        Http::assertNothingSent();
+        $this->assertSame($expiredSnapshot, $this->snapshot($row), 'แถว expired ไม่ถูกเปิดซ้ำหลังสแกน');
+    }
+
+    public function test_automatic_inflight_not_expired_by_sweep(): void
+    {
+        $this->seedWorld();
+        $row = $this->card('approved', ['status' => 'sending'], [
+            'delivery_status' => 'sending',
+            'first_push_at' => self::OLD,
+            'claim_token' => '9f8a7c6d'.'-5e4b-4a3c'.'-9d2e-1b0a7c6d5e4f',
+            'claimed_at' => self::OLD,
+            'attempt_number' => 1,
+            'message_sent' => 'ข้อความที่ยิงไปแล้ว (ของสังเคราะห์)',
+            'owner_action' => 'automatic',
+            'owner_action_at' => self::OLD,
+            'owner_telegram_user_id' => null,
+            'group_code' => 'G3',
+            'group_confidence' => 0.86,
+        ]);
+        $before = $this->snapshot($row);
+
+        $this->runJob();
+
+        $this->assertSame($before, $this->snapshot($row), 'แถว automatic ที่ freeze แล้ว (first_push set) ห้ามโดน sweep หมดอายุ');
+        $this->assertSame([], $this->refreshIds);
+        Http::assertNothingSent();
+        Queue::assertNothingPushed();
+    }
+
     public function test_outcomes_called_once_after_both_closing_steps_at_the_same_instant(): void
     {
         $this->seedWorld();

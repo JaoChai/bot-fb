@@ -879,6 +879,57 @@ class SettingsApiTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // B3b — สถานะหลับ (dormant): รายชื่อ automatic ว่าง = ห้ามเปลี่ยนเป็น automatic
+    // ส่วนค่า automatic ที่เก็บไว้แล้วพิมพ์ซ้ำยังเป็น no-op ที่ยอมรับ เหมือนเดิมบน main
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_dormant_empty_host_list_rejects_change_to_automatic_422(): void
+    {
+        [$user, $bot] = $this->enabledBaseline();
+        // ลูกค้า (CUSTOMER_FOLLOW_UP_AUTOMATIC_BOT_IDS) ว่าง — ทุกบอทยังกดอนุมัติเอง
+        config(['customer_follow_up.automatic_bot_ids' => []]);
+        $before = $this->row($bot->id);
+        $this->assertSame('approve', $before->follow_up_mode, 'พื้นฐานต้องเริ่มจากโหมด approve');
+
+        $put = $this->putSettings($user, $bot, ['follow_up_mode' => 'automatic']);
+
+        $put->assertStatus(422);
+        $this->assertSame(['automatic_not_allowed'], $put->json('errors.follow_up_mode'));
+        $row = $this->row($bot->id);
+        $this->assertSame('approve', $row->follow_up_mode, 'แถวยังเป็น approve หลังถูกปฏิเสธ');
+        $this->assertSame((array) $before, (array) $row, 'แถวคงเดิมทุกไบต์หลังถูกปฏิเสธ');
+    }
+
+    #[Test]
+    public function test_already_automatic_noop_remains_allowed(): void
+    {
+        [$user, $bot] = $this->enabledBaseline();
+        config(['customer_follow_up.automatic_bot_ids' => [$bot->id]]);
+        Carbon::setTestNow(Carbon::parse('2026-11-30 10:00:00', 'Asia/Bangkok'));
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-11-30 10:00:00', 'Asia/Bangkok'));
+
+        $this->putSettings($user, $bot, ['follow_up_mode' => 'automatic'])->assertOk();
+        $stored = $this->row($bot->id);
+        $this->assertSame('automatic', $stored->follow_up_mode);
+
+        // พิมพ์ซ้ำค่าเดิม = no-op ที่ยอมรับ (ไม่เช็ค capabilities ใหม่) และช่องอื่นยังบันทึกได้
+        $repeat = $this->putSettings($user, $bot, ['follow_up_mode' => 'automatic', 'offline_message' => 'x']);
+
+        $repeat->assertOk();
+        $row = $this->row($bot->id);
+        $this->assertSame('automatic', $row->follow_up_mode, 'ค่า automatic ที่เก็บไว้คงเดิม');
+        $this->assertSame('x', $row->offline_message, 'ช่องอื่นของการเซฟเดียวกันบันทึกได้');
+        $this->assertColumns($row, [
+            'enabled' => true,
+            'mode' => 'automatic',
+            'started_at' => self::NOW,
+            'activation_id' => (int) $stored->follow_up_activation_message_id,
+            'activated_at' => self::NOW,
+        ], 'ห้าคอลัมน์ follow-up คงเดิมทุกไบต์หลัง no-op');
+    }
+
+    // ------------------------------------------------------------------
     // อ่าน: แถวแรก, admin, owner อื่น, ไม่ล็อกอิน
     // ------------------------------------------------------------------
 
