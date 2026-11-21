@@ -2034,7 +2034,7 @@ class SendTest extends TestCase
         // แล้วคืนการ์ดปกติตามกติกา ไม่ปล่อยแถวค้างตายตลอด
         $seed = $this->seedAutomaticReady([
             'delivery_status' => 'sending',
-            'claim_token' => 'dead-claim-token',
+            'claim_token' => (string) Str::uuid(),
             'claimed_at' => '2026-11-16 09:30:00',
             'updated_at' => '2026-11-16 09:30:00',
             'retry_key' => $this->retryKey(),
@@ -2069,7 +2069,7 @@ class SendTest extends TestCase
         // ตามเดิม (ไม่มีงานไหนเลือกแถว sending ค้าง) และห้ามมีการ์ดที่กดได้เด็ดขาด
         $seed = $this->seedAutomaticReady([
             'delivery_status' => 'sending',
-            'claim_token' => 'dead-claim-token',
+            'claim_token' => (string) Str::uuid(),
             'claimed_at' => '2026-11-16 09:30:00',
             'updated_at' => '2026-11-16 09:30:00',
             'retry_key' => $this->retryKey(),
