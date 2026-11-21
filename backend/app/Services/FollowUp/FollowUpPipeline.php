@@ -43,6 +43,7 @@ class FollowUpPipeline
         private readonly FollowUpDecisionsService $decisions,
         private readonly FollowUpDraftService $drafts,
         private readonly FollowUpReservationService $reservations,
+        private readonly FollowUpAutomaticRule $autoRule,
     ) {}
 
     public function prepare(int $logId, ?CarbonImmutable $now = null): void
@@ -289,7 +290,7 @@ class FollowUpPipeline
                     'delivery_status' => LeadRecoveryLog::DELIVERY_STATUS_PENDING,
                     'updated_at' => $nowStr,
                 ]);
-                DB::table('follow_up_approvals')->insert([
+                $approvalId = (int) DB::table('follow_up_approvals')->insertGetId([
                     'lead_recovery_log_id' => $logId,
                     'status' => FollowUpApproval::STATUS_PENDING,
                     'revision' => 1,
@@ -303,6 +304,31 @@ class FollowUpPipeline
                     'created_at' => $nowStr,
                     'updated_at' => $nowStr,
                 ]);
+
+                // B3a: ผู้ตัดสินส่งเอง — สาขาเดียวในระบบที่เขียน owner_action = automatic
+                // (A4/A15/A17). ตัดสาขาก่อนเรียกกฎ: host list ว่างหรือ mode approve = เขียน
+                // เหมือน main เป๊ะ ไม่มีคำสั่งเพิ่ม ไม่มี reason ใหม่ กฎอ่าน database เท่านั้น
+                // (ไม่มี HTTP/โควต้าใน transaction) และตัดสินจากแถวที่เพิ่งบันทึกใน transaction เดียวกัน
+                if ($this->automaticCandidate((int) $log->bot_id)) {
+                    $autoLog = LeadRecoveryLog::query()->findOrFail($logId);
+                    $autoApproval = DB::table('follow_up_approvals')->where('id', $approvalId)->first();
+                    $autoReason = $this->autoRule->reason($autoLog, $autoApproval, $now);
+
+                    if ($autoReason === null) {
+                        $this->write($logId, [
+                            'delivery_status' => LeadRecoveryLog::DELIVERY_STATUS_APPROVED,
+                            'owner_action' => LeadRecoveryLog::OWNER_ACTION_AUTOMATIC,
+                            'owner_action_at' => $nowStr,
+                            'owner_telegram_user_id' => null,
+                            'updated_at' => $nowStr,
+                        ]);
+                        DB::table('follow_up_approvals')
+                            ->where('id', $approvalId)
+                            ->update(['status' => FollowUpApproval::STATUS_APPROVED, 'updated_at' => $nowStr]);
+                    } else {
+                        $this->write($logId, ['reason_code' => $autoReason, 'updated_at' => $nowStr]);
+                    }
+                }
             });
         } catch (RuntimeException $claimLost) {
             // เฉพาะ marker ของเราเท่านั้น — database error ต้องยิงต่อให้ job ล้มเอง
@@ -315,6 +341,20 @@ class FollowUpPipeline
                 'reason' => 'claim_lost',
             ]);
         }
+    }
+
+    /**
+     * ตัดสาขา "พยายามส่งเองไหม" ก่อนเรียกกฎ (A2/A12): host list ว่าง = ทุกบอทห้ามส่งเอง
+     * และ mode ต้องเป็น automatic จากฐานข้อมูลล่าสุดเท่านั้น อ่าน database + config เท่านั้น
+     */
+    private function automaticCandidate(int $botId): bool
+    {
+        $hostList = array_map(intval(...), (array) config('customer_follow_up.automatic_bot_ids', []));
+        if ($hostList === [] || ! in_array($botId, $hostList, true)) {
+            return false;
+        }
+
+        return DB::table('bot_settings')->where('bot_id', $botId)->value('follow_up_mode') === 'automatic';
     }
 
     /**

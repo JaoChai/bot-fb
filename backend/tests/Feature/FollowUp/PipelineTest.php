@@ -3,6 +3,7 @@
 namespace Tests\Feature\FollowUp;
 
 use App\Jobs\GenerateCustomerFollowUp;
+use App\Jobs\SendCustomerFollowUp;
 use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\Flow;
@@ -16,16 +17,19 @@ use App\Services\FollowUp\FollowUpReservationService;
 use App\Services\FollowUp\FollowUpSalesProjector;
 use App\Services\FollowUp\FollowUpTelegramService;
 use App\Services\OpenRouterService;
+use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Mockery\MockInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
+use RuntimeException;
 use Tests\TestCase;
 
 /**
@@ -74,6 +78,14 @@ class PipelineTest extends TestCase
             'services.openrouter.api_key' => 'test'.'-key-'.'b3c',
             'customer_follow_up.decisions_url' => $this->url,
         ]);
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        CarbonImmutable::setTestNow();
+
+        parent::tearDown();
     }
 
     // ------------------------------------------------------------------
@@ -1214,6 +1226,219 @@ class PipelineTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // B3a — ผู้ตัดสินส่งเอง: mode approve เขียนเหมือน main เป๊ะ, automatic คู่เดียวของระบบ
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_approve_mode_identical_old_pending_card_path(): void
+    {
+        $bot = $this->seedBot(); // seed = mode approve ตามทุกบอทวันนี้
+        $room = $this->makeRoom($bot, 'UAP1');
+        $logId = $this->makeLog($room);
+        $this->fakeDecisions();
+        $this->fakeWriter();
+
+        $this->runPrepare($logId);
+
+        $row = $this->logRow($logId);
+        $draft = 'ทางร้านขออนุญาตถามหน่อยครับ ยังสนใจรายการเดิมอยู่ไหมครับ';
+
+        $this->assertSame('pending', $row->delivery_status);
+        $this->assertNull($row->reason_code);
+        $this->assertNull($row->owner_action);
+        $this->assertNull($row->owner_action_at);
+        $this->assertNull($row->owner_telegram_user_id);
+        $this->assertSame('G3', $row->group_code);
+        $this->assertSame(0.9, (float) $row->group_confidence);
+        $this->assertSame(0.1, (float) $row->declined_score);
+        $this->assertSame($draft, $row->draft);
+        $checkAnswers = json_decode((string) $row->check_answers, true);
+        $this->assertSame([], $checkAnswers['failed']);
+        $this->assertFalse($checkAnswers['error']);
+        $this->assertEqualsWithDelta(0.0006, (float) $row->model_cost, 0.0000001);
+
+        $approvals = DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId)->get();
+        $this->assertCount(1, $approvals);
+        $approval = $approvals[0];
+        $this->assertSame('pending', $approval->status);
+        $this->assertSame(1, $approval->revision);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{16}$/', (string) $approval->nonce);
+        $this->assertSame($draft, $approval->text);
+        $this->assertSame($checkAnswers, json_decode((string) $approval->check_answers, true));
+        $this->assertFalse((bool) $approval->check_overridden);
+        $this->assertSame('new', $approval->telegram_delivery_state);
+        $this->assertNull($approval->telegram_plugin_id);
+        $this->assertNull($approval->telegram_chat_id);
+        $this->assertNull($approval->telegram_message_id);
+        $expectedExpiry = CarbonImmutable::parse((string) $row->drafted_at, 'Asia/Bangkok')
+            ->addHours(12)->format('Y-m-d H:i:s');
+        $this->assertSame($expectedExpiry, (string) $approval->expires_at);
+        $this->assertSame('2026-11-16 10:00:00', (string) $approval->created_at);
+        $this->assertSame('2026-11-16 10:00:00', (string) $approval->updated_at);
+        $this->assertSame(2, count($this->decisionRequests));
+        $this->assertSame(1, $this->usedSlots($bot->id, '2026-11-16'));
+    }
+
+    #[Test]
+    public function test_automatic_all_passes_atomic_approval_and_dispatch(): void
+    {
+        Bus::fake([SendCustomerFollowUp::class]);
+        $bot = $this->seedAutomaticBot();
+        $room = $this->makeRoom($bot, 'UAA1');
+        $logId = $this->makeLog($room);
+        $this->fakeDecisions();
+        $this->fakeWriter();
+        $telegram = $this->mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->never();
+        // job เรียก prepare โดยไม่ส่งนาฬิกา (production contract) — หยุดเวลาไว้ที่ NOW พอดี
+        Carbon::setTestNow($this->now());
+        CarbonImmutable::setTestNow($this->now());
+
+        (new GenerateCustomerFollowUp($logId))->handle(app(FollowUpPipeline::class), $telegram);
+
+        $row = $this->logRow($logId);
+        $draft = 'ทางร้านขออนุญาตถามหน่อยครับ ยังสนใจรายการเดิมอยู่ไหมครับ';
+        $this->assertSame('approved', $row->delivery_status);
+        $this->assertSame('automatic', $row->owner_action);
+        $this->assertSame('2026-11-16 10:00:00', (string) $row->owner_action_at);
+        $this->assertNull($row->owner_telegram_user_id);
+        $this->assertNull($row->reason_code);
+        $this->assertSame($draft, $row->draft);
+        $this->assertEqualsWithDelta(0.0006, (float) $row->model_cost, 0.0000001);
+        $this->assertSame(1, $this->usedSlots($bot->id, '2026-11-16'));
+
+        $approvals = DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId)->get();
+        $this->assertCount(1, $approvals);
+        $approval = $approvals[0];
+        $this->assertSame('approved', $approval->status);
+        $this->assertSame(1, $approval->revision);
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{16}$/', (string) $approval->nonce);
+        $this->assertSame($draft, $approval->text);
+        $this->assertSame('new', $approval->telegram_delivery_state);
+        $expectedExpiry = CarbonImmutable::parse((string) $row->drafted_at, 'Asia/Bangkok')
+            ->addHours(12)->format('Y-m-d H:i:s');
+        $this->assertSame($expectedExpiry, (string) $approval->expires_at);
+
+        $approvalId = (int) $approval->id;
+        Bus::assertDispatched(SendCustomerFollowUp::class, 1);
+        Bus::assertDispatched(function (SendCustomerFollowUp $job) use ($approvalId): bool {
+            return $job->approvalId === $approvalId;
+        });
+    }
+
+    #[Test]
+    public function test_auto_denial_produces_owner_card_and_reason(): void
+    {
+        $bot = $this->seedAutomaticBot();
+        $room = $this->makeRoom($bot, 'UAD1');
+        $logId = $this->makeLog($room);
+        // ความมั่นใจ 0.7 ต่ำกว่าค่าตั้ง 0.8 — กฎปฏิเสธ → คู่ pending/pending ปกติ + reason code
+        $this->fakeDecisions(sort: ['group' => ['choice' => 'G3', 'confidence' => 0.7], 'declined' => ['noul' => 0.1]]);
+        $this->fakeWriter();
+
+        $this->runPrepare($logId);
+
+        $row = $this->logRow($logId);
+        $this->assertSame('pending', $row->delivery_status);
+        $this->assertSame('auto_confidence', $row->reason_code);
+        $this->assertNull($row->owner_action);
+        $this->assertNull($row->owner_action_at);
+        $this->assertNull($row->owner_telegram_user_id);
+        $this->assertSame(0.7, (float) $row->group_confidence);
+        $this->assertSame(1, DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId)->count());
+        $approval = DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId)->first();
+        $this->assertSame('pending', $approval->status);
+        $this->assertSame('new', $approval->telegram_delivery_state);
+        $this->assertSame(1, $this->usedSlots($bot->id, '2026-11-16'));
+    }
+
+    #[Test]
+    public function test_empty_host_list_never_writes_automatic(): void
+    {
+        // mode automatic ถูกปลอมลง settings แต่ host list ว่าง (ค่า default ของ production) —
+        // ต้องตัดสาขาก่อนเรียกกฎ: pending/pending เหมือน main และห้ามมี reason code ใหม่
+        config(['customer_follow_up.automatic_bot_ids' => []]);
+        $bot = $this->seedBot();
+        DB::table('bot_settings')->where('bot_id', $bot->id)->update(['follow_up_mode' => 'automatic']);
+        $room = $this->makeRoom($bot, 'UAE1');
+        $logId = $this->makeLog($room);
+        $this->fakeDecisions();
+        $this->fakeWriter();
+
+        $this->runPrepare($logId);
+
+        $row = $this->logRow($logId);
+        $this->assertSame('pending', $row->delivery_status);
+        $this->assertNull($row->reason_code);
+        $this->assertNull($row->owner_action);
+        $this->assertNull($row->owner_action_at);
+        $approval = DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId)->first();
+        $this->assertSame('pending', $approval->status);
+        $this->assertSame('new', $approval->telegram_delivery_state);
+        $this->assertSame(1, $this->usedSlots($bot->id, '2026-11-16'));
+    }
+
+    #[Test]
+    public function test_pipeline_crash_before_commit_has_no_partial_approval(): void
+    {
+        $bot = $this->seedAutomaticBot();
+        $room = $this->makeRoom($bot, 'UAC1');
+        $logId = $this->makeLog($room);
+        $this->fakeDecisions();
+        $this->fakeWriter();
+        // จำลอง worker ตายกลาง transaction persist: คำสั่งแรกหลัง insert บัตร (การอัปเกรด
+        // เป็น approved/automatic) โยน exception → ทั้ง transaction ย้อน ห้ามเหลือบัตรครึ่ง ๆ
+        $armed = false;
+        DB::connection()->beforeExecuting(function ($query) use (&$armed): void {
+            if (str_starts_with(strtolower(trim((string) $query)), 'insert into "follow_up_approvals"')) {
+                $armed = true;
+
+                return;
+            }
+            if ($armed) {
+                $armed = false; // ยิงครั้งเดียวพอ — คิวรี่หลังจบต้องทำงานปกติ
+                throw new RuntimeException('boom-persist-crash-b3a');
+            }
+        });
+
+        try {
+            $this->runPrepare($logId);
+            $this->fail('crash hook must stop prepare inside the persist transaction');
+        } catch (RuntimeException) {
+            DB::connection()->beforeExecuting(function (): void {});
+        }
+
+        $this->assertSame(0, DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId)->count(), 'no partial approval');
+        $row = $this->logRow($logId);
+        $this->assertSame('drafting', $row->delivery_status);
+        $this->assertNull($row->owner_action);
+        $this->assertNull($row->draft);
+    }
+
+    #[Test]
+    public function test_pipeline_crash_after_commit_scan_recovers(): void
+    {
+        // งานเตรียมตายหลัง commit (dispatch หาย) — แถว committed approved/approved ต้องมีอยู่จริง
+        // และยืมได้ (claim path (a) รับคู่ approved/approved ที่ first_push ว่าง) การสแกนเป็นของ B3b
+        $bot = $this->seedAutomaticBot();
+        $room = $this->makeRoom($bot, 'UAR1');
+        $logId = $this->makeLog($room);
+        $this->fakeDecisions();
+        $this->fakeWriter();
+
+        $this->runPrepare($logId);
+
+        $row = $this->logRow($logId);
+        $this->assertSame('approved', $row->delivery_status);
+        $this->assertSame('automatic', $row->owner_action);
+        $this->assertNull($row->first_push_at);
+        $this->assertNull($row->claim_token);
+        $approval = DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId)->first();
+        $this->assertSame('approved', $approval->status);
+        $this->assertGreaterThan(self::NOW, (string) $approval->expires_at, 'บัตรยังไม่หมดอายุ = claim ได้');
+    }
+
+    // ------------------------------------------------------------------
     // Fixtures and helpers
     // ------------------------------------------------------------------
 
@@ -1251,6 +1476,16 @@ class PipelineTest extends TestCase
             'trigger_condition' => 'always',
             'config' => ['access_token' => 'tok-'.md5($bot->id), 'chat_id' => '999', 'authorized_user_ids' => ['555']],
         ]);
+
+        return $bot;
+    }
+
+    /** บอทโหมด automatic ผ่าน host list (started 30 วันก่อน NOW เกิน 14 วัน) — พร้อมตัดสินส่งเอง */
+    private function seedAutomaticBot(): Bot
+    {
+        $bot = $this->seedBot();
+        config(['customer_follow_up.automatic_bot_ids' => [$bot->id]]);
+        DB::table('bot_settings')->where('bot_id', $bot->id)->update(['follow_up_mode' => 'automatic']);
 
         return $bot;
     }

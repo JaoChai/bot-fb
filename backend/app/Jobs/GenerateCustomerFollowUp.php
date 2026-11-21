@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\FollowUpApproval;
+use App\Models\LeadRecoveryLog;
 use App\Services\FollowUp\FollowUpPipeline;
 use App\Services\FollowUp\FollowUpTelegramService;
 use Illuminate\Bus\Queueable;
@@ -52,6 +53,22 @@ class GenerateCustomerFollowUp implements ShouldQueue
             || (string) $approval->status !== FollowUpApproval::STATUS_PENDING
             || (string) $approval->telegram_delivery_state !== FollowUpApproval::TELEGRAM_STATE_NEW
         ) {
+            // B3a: คู่ approved/approved ที่เพิ่งถูกตัดสินส่งเอง (owner_action = automatic,
+            // state new = ไม่มีการ์ดให้เสนอ) → ส่งทันที ไม่ปล่อยการ์ด; จุดตัดสินใน transaction
+            // ของ prepare เป็นผู้เขียน owner_action จุดเดียวของระบบ ที่นี่อ่านอย่างเดียว
+            $logState = DB::table('lead_recovery_logs')
+                ->where('id', $this->logId)
+                ->first(['delivery_status', 'owner_action']);
+
+            if ($logState !== null
+                && (string) $logState->delivery_status === LeadRecoveryLog::DELIVERY_STATUS_APPROVED
+                && (string) $logState->owner_action === LeadRecoveryLog::OWNER_ACTION_AUTOMATIC
+                && (string) $approval->status === FollowUpApproval::STATUS_APPROVED
+                && (string) $approval->telegram_delivery_state === FollowUpApproval::TELEGRAM_STATE_NEW
+            ) {
+                SendCustomerFollowUp::dispatch((int) $approval->id);
+            }
+
             return;
         }
 
