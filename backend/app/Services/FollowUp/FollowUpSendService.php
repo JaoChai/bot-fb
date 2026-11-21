@@ -56,6 +56,7 @@ class FollowUpSendService
     public function __construct(
         private readonly LINEService $lineService,
         private readonly FollowUpQuotaService $quota,
+        private readonly FollowUpTelegramService $telegram,
     ) {}
 
     /**
@@ -93,8 +94,32 @@ class FollowUpSendService
         // D54: แถวที่ยิงแล้ว (first_push_at ไม่ว่าง) เช็ค owner หลัง claim เป็น gate แรก —
         // บล็อกแบบไม่เขียนตรงนี้จะทิ้งแถวค้าง retry กินสล็อตโควต้าตลอด; already_sent/missing row ยังตรวจข้างบน
         if ($log->first_push_at === null) {
-            $ownerReason = self::ownerGateReason($log, $approval);
+            $ownerReason = self::ownerGateReason($log, $approval, $now);
             if ($ownerReason !== null) {
+                // B3a/A3: แถวอัตโนมัติจริงที่กติกา A1 เปลี่ยนก่อนยิง (kill switch ฯลฯ) —
+                // คืนเป็นการ์ดปกติ ไม่ยิง; โครงสร้างผิด (ปลอม) = fail closed แบบไม่เขียน
+                if ($log->owner_action === LeadRecoveryLog::OWNER_ACTION_AUTOMATIC
+                    && str_starts_with($ownerReason, 'auto_')) {
+                    // A20: แถว sending ที่ถือ claim ค้างเกิน 10 นาที = worker ตายก่อน freeze
+                    // (reconcile ไม่เลือกแถว sending) — รับช่วงด้วย CAS บน token ที่เห็น;
+                    // token ที่ยังสด = เจ้าของกำลังทำงาน ให้จบเองที่ A14 จุดเดียวกัน
+                    $staleCutoff = $now->subMinutes(self::CLAIM_STALE_MINUTES)->format('Y-m-d H:i:s');
+                    $observedToken = (string) ($log->claim_token ?? '');
+                    if ($observedToken !== '' && (string) $log->updated_at > $staleCutoff) {
+                        return $this->finish($approvalId, $logId, $botId, 'blocked', $ownerReason);
+                    }
+
+                    return $this->revertAutomaticToPending(
+                        $approvalId,
+                        $logId,
+                        $botId,
+                        $observedToken === '' ? null : $observedToken,
+                        $ownerReason,
+                        $now,
+                        $nowStr,
+                    );
+                }
+
                 return $this->finish($approvalId, $logId, $botId, 'blocked', $ownerReason);
             }
         }
@@ -120,7 +145,7 @@ class FollowUpSendService
 
         // 0) owner gate ของแถวที่ยิงแล้ว (D54) — gate แรกหลัง claim: พังที่ไหนก็จบ send_failed
         //    เพราะยิงออกไปแล้วผลรับไม่ได้รู้ผล ห้ามปล่อยแถวค้าง retry แบบไม่เขียนอะไรเลย
-        if ($pushed && self::ownerGateReason($fresh, $freshApproval) !== null) {
+        if ($pushed && self::ownerGateReason($fresh, $freshApproval, $now) !== null) {
             return $this->endWrite($approvalId, $logId, $botId, $token, 'send_failed', 'cancelled', 'acceptance_unknown_gate_changed', 'failed', $nowStr);
         }
 
@@ -190,6 +215,23 @@ class FollowUpSendService
                 : $this->endWrite($approvalId, $logId, $botId, $token, 'cancelled', 'cancelled', 'message_arrived', 'blocked', $nowStr);
         }
 
+        // 7) A14: กติกา A1 อ่านซ้ำจากฐานข้อมูลเป็นขั้นสุดท้ายของแถว automatic — หลัง last look
+        //    ก่อน freeze UPDATE เสมอ (จุดตัดสินของ kill switch: settings ที่ commit มาก่อนอ่าน
+        //    ครั้งนี้หยุดการยิง ที่ commit ทับหลังจากนี้ไม่ทันแล้ว = ของที่ยิงไปเรียกคืนไม่ได้)
+        if ((string) $fresh->owner_action === LeadRecoveryLog::OWNER_ACTION_AUTOMATIC) {
+            $autoReason = $logModel === null
+                ? 'auto_switch_off'
+                : (new FollowUpAutomaticRule)->reason($logModel, $freshApproval, $now);
+
+            if ($autoReason !== null) {
+                return $pushed
+                    // ยิงไปแล้ว = ไม่รู้ผลตามเดิม ห้ามกลายเป็นการ์ด (A11/A16)
+                    ? $this->endWrite($approvalId, $logId, $botId, $token, 'send_failed', 'cancelled', 'acceptance_unknown_gate_changed', 'failed', $nowStr)
+                    // ยังไม่ยิง = คืนการ์ดปกติให้เจ้าของ แบบ atomic ตาม claim token ที่ถืออยู่
+                    : $this->revertAutomaticToPending($approvalId, $logId, $botId, $token, $autoReason, $now, $nowStr);
+            }
+        }
+
         // ---- Step D: freeze แล้วยิงครั้งเดียวนอก transaction ----
         if ($pushed && (int) $fresh->attempt_number >= self::MAX_PUSHES) {
             return $this->endWrite($approvalId, $logId, $botId, $token, 'send_failed', 'cancelled', 'acceptance_unknown_attempts', 'failed', $nowStr);
@@ -245,7 +287,7 @@ class FollowUpSendService
         $staleCutoff = $now->subMinutes(self::CLAIM_STALE_MINUTES)->format('Y-m-d H:i:s');
 
         try {
-            return DB::transaction(function () use ($approvalId, $logId, $token, $nowStr, $newKey, $staleCutoff): bool {
+            return DB::transaction(function () use ($approvalId, $logId, $token, $now, $nowStr, $newKey, $staleCutoff): bool {
                 $row = DB::table('lead_recovery_logs')->where('id', $logId)->lockForUpdate()->first();
                 $approval = DB::table('follow_up_approvals')->where('id', $approvalId)->lockForUpdate()->first();
 
@@ -270,7 +312,7 @@ class FollowUpSendService
 
                 // B4d (6a): owner เช็คซ้ำบนแถวที่ล็อกอยู่ เฉพาะแถวที่ยังไม่เคยยิง —
                 // คนอื่นแก้บัตรพอดีระหว่าง Step A กับ claim ต้องจบ blocked ที่นี่ ไม่เขียน ไม่ยิง
-                if ($row->first_push_at === null && self::ownerGateReason($row, $approval) !== null) {
+                if ($row->first_push_at === null && self::ownerGateReason($row, $approval, $now) !== null) {
                     return false;
                 }
 
@@ -520,12 +562,50 @@ class FollowUpSendService
         return $this->finish($approvalId, $logId, $botId, 'retry', $reason);
     }
 
-    /** เหตุผลฝั่ง owner ที่ห้ามส่งบัตรนี้ — null = ผ่านทุกข้อ (ใช้ทั้ง Step A และ owner gate หลัง claim ของแถวยิงแล้ว) */
-    private static function ownerGateReason(object $log, object $approval): ?string
+    /**
+     * เหตุผลฝั่ง owner ที่ห้ามส่งบัตรนี้ — null = ผ่านทุกข้อ (ใช้ทั้ง Step A, claim ซ้ำ
+     * และ owner gate หลัง claim ของแถวยิ้งแล้ว)
+     *
+     * B3a: แถว owner_action = automatic ผ่านรายการเช็กโครงสร้างของตัวเองก่อน (สิ่งที่
+     * pipeline เขียนได้ข้อเดียว): เวลาตัดสินไม่ว่าง, ไม่มี telegram id มนุษย์, คู่
+     * approved/approved หรือ sending/sending, revision 1, ข้อความตรงร่าง, เช็คสะอาด
+     * ไม่ override — ผิดข้อไหน = 'automatic_action' fail closed แบบไม่เขียนอะไร
+     * โครงสร้างผ่าน = กติกา A1 ตัดสินใหม่จากฐานข้อมูลล่าสุด (โค้ด auto_* ตามกฎ)
+     * กฎ sent/edited ของมนุษย์เปลี่ยนแปลงไม่ได้ตามเดิม
+     */
+    private static function ownerGateReason(object $log, object $approval, ?CarbonImmutable $now = null): ?string
     {
         if ($log->owner_action === LeadRecoveryLog::OWNER_ACTION_AUTOMATIC) {
-            // D47: เส้นทาง automatic ยังไม่อยู่ในการ์ดนี้ — มาพร้อมการ์ดที่สร้างบัตร automatic
-            return 'automatic_action';
+            if ($log->owner_action_at === null
+                || trim((string) $log->owner_telegram_user_id) !== ''
+                || ! in_array(
+                    [(string) $log->delivery_status, (string) $approval->status],
+                    [
+                        [LeadRecoveryLog::DELIVERY_STATUS_APPROVED, 'approved'],
+                        [LeadRecoveryLog::DELIVERY_STATUS_SENDING, 'sending'],
+                    ],
+                    true,
+                )
+                || (int) $approval->revision !== 1
+                || (string) $approval->text !== (string) $log->draft
+                || (bool) $approval->check_overridden
+                || self::checkFlagged((string) $approval->check_answers)) {
+                return 'automatic_action';
+            }
+
+            $model = $log instanceof LeadRecoveryLog
+                ? $log
+                : LeadRecoveryLog::query()->find((int) $log->id);
+
+            if ($model === null) {
+                return 'automatic_action';
+            }
+
+            return (new FollowUpAutomaticRule)->reason(
+                $model,
+                $approval,
+                $now ?? CarbonImmutable::now(FollowUpCapabilities::TIMEZONE),
+            );
         }
 
         if (! in_array($log->owner_action, [LeadRecoveryLog::OWNER_ACTION_SENT, LeadRecoveryLog::OWNER_ACTION_EDITED], true)
@@ -545,6 +625,91 @@ class FollowUpSendService
         }
 
         return null;
+    }
+
+    /**
+     * B3a/A3+A16: กติกา A1 ของแถว automatic พัง "ก่อนยิง" (first_push_at ยังว่าง) — คืน
+     * แถวเป็นคู่ pending/pending เหมือนแถวมนุษย์ ล้าง owner_action/เวลาตัดสิน/telegram id/
+     * claim/retry key คงข้อความ เช็ค revision และวันหมดอายุเดิม บันทึก reason ของกฎ
+     * แล้วเสนอการ์ดปกติ "หนึ่งใบ" นอก transaction ($token = null คือสาย Step A: ต้องยัง
+     * ไม่ถูกยืม; มี token = สาย A14: ต้องตรง token ที่ถือ คู่ sending/sending หรือ
+     * approved/approved) บัตรหมดอายุ = ใช้ผลจบเดิม ไม่มีการ์ดที่กดได้
+     */
+    private function revertAutomaticToPending(int $approvalId, int $logId, int $botId, ?string $token, string $reason, CarbonImmutable $now, string $nowStr): string
+    {
+        $expiry = DB::table('follow_up_approvals')->where('id', $approvalId)->value('expires_at');
+        if ($expiry !== null && $nowStr >= (string) $expiry) {
+            // บัตรหมดอายุ — ไม่มีการ์ดที่กดได้เด็ดขาด; แถวที่ยังถือ claim (สาย A14 หรือ
+            // รับช่วง worker ตาย) ปลด claim ด้วยจุดจบ expired เดิม เพราะไม่มีงานไหน
+            // เลือกแถว sending ค้างไว้ได้; คู่ approved ที่ยังไม่ถูกยืมให้ reconciler ปลดตามปกติ
+            if ($token !== null) {
+                return $this->endWrite($approvalId, $logId, $botId, $token, 'expired', 'expired', 'expired_before_send', 'blocked', $nowStr);
+            }
+
+            return $this->finish($approvalId, $logId, $botId, 'blocked', $reason);
+        }
+
+        try {
+            DB::transaction(function () use ($approvalId, $logId, $token, $reason, $nowStr): void {
+                $log = DB::table('lead_recovery_logs')->where('id', $logId)->lockForUpdate()->first();
+                $approval = DB::table('follow_up_approvals')->where('id', $approvalId)->lockForUpdate()->first();
+
+                $logPair = $log === null ? null : (string) $log->delivery_status;
+                $approvalPair = $approval === null ? null : (string) $approval->status;
+                $validPair = [$logPair, $approvalPair] === [LeadRecoveryLog::DELIVERY_STATUS_APPROVED, 'approved']
+                    || [$logPair, $approvalPair] === [LeadRecoveryLog::DELIVERY_STATUS_SENDING, 'sending'];
+
+                $valid = $log !== null && $approval !== null
+                    && $log->first_push_at === null
+                    && $log->owner_action === LeadRecoveryLog::OWNER_ACTION_AUTOMATIC
+                    && $validPair
+                    && ($token === null
+                        ? $log->claim_token === null
+                        : hash_equals((string) ($log->claim_token ?? ''), $token));
+
+                if (! $valid) {
+                    throw new ClaimLostException;
+                }
+
+                $logMoved = DB::table('lead_recovery_logs')
+                    ->where('id', $logId)
+                    ->whereNull('first_push_at')
+                    ->where('claim_token', $token)
+                    ->update([
+                        'delivery_status' => LeadRecoveryLog::DELIVERY_STATUS_PENDING,
+                        'reason_code' => $reason,
+                        'owner_action' => null,
+                        'owner_action_at' => null,
+                        'owner_telegram_user_id' => null,
+                        'claim_token' => null,
+                        'claimed_at' => null,
+                        'retry_key' => null,
+                        'updated_at' => $nowStr,
+                    ]) === 1;
+
+                $approvalMoved = DB::table('follow_up_approvals')
+                    ->where('id', $approvalId)
+                    ->where('status', $approvalPair)
+                    ->update(['status' => 'pending', 'updated_at' => $nowStr]) === 1;
+
+                if (! $logMoved || ! $approvalMoved) {
+                    throw new ClaimLostException;
+                }
+            });
+        } catch (ClaimLostException) {
+            return $this->finish($approvalId, $logId, $botId, 'blocked', 'claim_lost');
+        }
+
+        try {
+            $this->telegram->publish($approvalId, $now);
+        } catch (Throwable) {
+            // การ์ดพังไม่เปลี่ยนผลการคืนแถว — log เตือนบรรทัดเดียวไม่มีข้อความลูกค้า
+            Log::warning('Customer follow-up automatic fallback card publish failed', [
+                'approval_id' => $approvalId,
+            ]);
+        }
+
+        return $this->finish($approvalId, $logId, $botId, 'blocked', $reason);
     }
 
     /**

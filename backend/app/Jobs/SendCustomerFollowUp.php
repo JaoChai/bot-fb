@@ -2,6 +2,8 @@
 
 namespace App\Jobs;
 
+use App\Models\FollowUpApproval;
+use App\Models\LeadRecoveryLog;
 use App\Services\FollowUp\FollowUpCapabilities;
 use App\Services\FollowUp\FollowUpSendService;
 use App\Services\FollowUp\FollowUpTelegramService;
@@ -16,12 +18,19 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * ส่งข้อความที่เจ้านายกดอนุมัติแล้วให้ลูกค้า — การ์ด B6e (plan §3.6, คำตัดสิน D101-D105)
+ * ส่งข้อความที่เจ้านายกดอนุมัติแล้วให้ลูกค้า — การ์ด B6e (plan §3.6, D101-D105)
+ * + B3b: เส้นทางของแถว automatic (โหมดส่งเอง — ยังหลับ ทุกบอทยัง approve)
  *
- * ทำงานเรียบง่าย: เรียกตัวส่งครั้งเดียว (B4) อ่านสถานะปลายทางของแถวแล้วระบายการ์ด
- * Telegram เมื่อแถวถึงจุดจบ (sent/cancelled/expired) เท่านั้น (D102) — แถวที่ถูกคืน
- * กลับ approved คงการ์ด ⏳ เดิม ยิง LINE แล้วยังไม่เข้า (retry) = คิวงานตัวเองซ้ำ
- * เลื่อนถึง next_attempt_at ของแถว (D103); งานหายให้ step E ของสแกนเป็นคนเก็บ
+ * ทำงานเรียบง่าย: เรียกตัวส่งครั้งเดียว (B4) อ่านสถานะปลายทาง "ที่ commit แล้ว" ของแถว
+ * แถวมนุษย์: ระบายการ์ด Telegram เมื่อถึงจุดจบ (sent/cancelled/expired) เท่านั้น (D102)
+ * แถว automatic: sent/sent = แจ้งห้องเตือนครั้งเดียว (B2 publishAutomaticNotice, CAS
+ * กันยิงซ้ำ) ไม่มีวันระบายการ์ด; pending/pending state new reason auto_* first_push_at
+ * ว่าง = คืนการ์ดปกติ (publish) — ตัดสินที่ "รูปร่างที่ revert ของตัวส่งทิ้งจริง" ไม่ผูก
+ * owner_action เพราะ revert ล้างมันทิ้ง; จุดจบอื่นและ sending/retry = เงียบ — แถวที่ยิงแล้ว
+ * (first_push set) ไม่มีวันกลายเป็นการ์ด (A11/A16)
+ *
+ * แถวที่ถูกคืนกลับ approved คงการ์ด ⏳ เดิม ยิง LINE แล้วยังไม่เข้า (retry) = คิวงาน
+ * ตัวเองซ้ำ เลื่อนถึง next_attempt_at ของแถว (D103); งานหายให้ step E ของสแกนเป็นคนเก็บ
  *
  * tries 1 + timeout 60 วินาที คิวปริยายของระบบ payload ต่างกันเฉพาะ approvalId
  * log ทุกบรรทัดไม่พาข้อความ / ลูกค้า / retry key / token — มีแต่ approval id
@@ -46,10 +55,21 @@ class SendCustomerFollowUp implements ShouldQueue
         $approval = DB::table('follow_up_approvals')
             ->where('id', $this->approvalId)
             ->first();
+        $log = $approval === null
+            ? null
+            : DB::table('lead_recovery_logs')
+                ->where('id', (int) $approval->lead_recovery_log_id)
+                ->first();
 
-        // D102: ระบายการ์ดเมื่อแถวถึงจุดจบเท่านั้น — already_sent ด้วย (ซ่อมการ์ดที่ระบายพลาด)
-        if ($approval !== null
+        // เส้นทาง automatic: ผูก owner_action (แถวที่ตัดสินส่งเอง) หรือรูปร่างที่ revert ของ
+        // ตัวส่งทิ้งจริง — revert ล้าง owner_action ทิ้ง การ์ดคืนจึงต้องอ่านจากรูปร่างแทน
+        if ($log !== null
+            && ((string) ($log->owner_action ?? '') === LeadRecoveryLog::OWNER_ACTION_AUTOMATIC
+                || $this->isRevertedFallbackPair($approval, $log))) {
+            $this->routeAutomaticRow($telegram, $approval, $log);
+        } elseif ($approval !== null
             && in_array((string) $approval->status, ['sent', 'cancelled', 'expired'], true)) {
+            // D102: ระบายการ์ดเมื่อแถวถึงจุดจบเท่านั้น — already_sent ด้วย (ซ่อมการ์ดที่ระบายพลาด)
             try {
                 $telegram->refreshCard($this->approvalId);
             } catch (Throwable $repaintFailure) {
@@ -80,5 +100,71 @@ class SendCustomerFollowUp implements ShouldQueue
         $delaySeconds = (int) ceil($now->diffInSeconds($nextAttemptAt, false));
 
         self::dispatch($this->approvalId)->delay(max(1, $delaySeconds));
+    }
+
+    /**
+     * เส้นทางแถว automatic หลังตัวส่งจบ — อ่านสถานะ commit แล้ว ไม่ยิง LINE เอง
+     * ทุกการแจ้ง/การ์ดผ่านบริการ Telegram เดิม และพังก็ไม่เปลี่ยนผลการส่ง (A5/A9):
+     * log เตือนบรรทัดเดียว เฉพาะชื่อ class ไม่พาข้อความลูกค้า
+     */
+    private function routeAutomaticRow(FollowUpTelegramService $telegram, ?object $approval, ?object $log): void
+    {
+        if ($approval === null || $log === null) {
+            return;
+        }
+
+        $pair = [(string) $log->delivery_status, (string) $approval->status];
+
+        // ส่งถึงลูกค้าสำเร็จ = แจ้งห้องเตือนครั้งเดียว (B2) — ไม่มีวันระบายการ์ดทับข้อความแจ้ง
+        if ($pair === [LeadRecoveryLog::DELIVERY_STATUS_SENT, FollowUpApproval::STATUS_SENT]) {
+            try {
+                $telegram->publishAutomaticNotice($this->approvalId);
+            } catch (Throwable $noticeFailure) {
+                Log::warning('Customer follow-up automatic notice failed', [
+                    'approval_id' => $this->approvalId,
+                    'exception_class' => $noticeFailure::class,
+                ]);
+            }
+
+            return;
+        }
+
+        // คืนการ์ดปกติ (fallback): รูปร่างที่ revert ของตัวส่งทิ้งจริง — ล้าง owner_action
+        // เหลือ state new + reason auto_* เป็นร่องรอย และยังไม่เคยยิง LINE (A16: แถวที่
+        // first_push set ไม่มีวันกลายเป็นการ์ด แม้รูปร่างอื่นตรงทั้งหมด)
+        if ($pair === [LeadRecoveryLog::DELIVERY_STATUS_PENDING, FollowUpApproval::STATUS_PENDING]
+            && (string) $approval->telegram_delivery_state === FollowUpApproval::TELEGRAM_STATE_NEW
+            && str_starts_with((string) ($log->reason_code ?? ''), 'auto_')
+            && $log->first_push_at === null) {
+            try {
+                $telegram->publish($this->approvalId);
+            } catch (Throwable $publishFailure) {
+                Log::warning('Customer follow-up automatic fallback card publish failed', [
+                    'approval_id' => $this->approvalId,
+                    'exception_class' => $publishFailure::class,
+                ]);
+            }
+
+            return;
+        }
+
+        // จุดจบอื่น (cancelled/expired) และ sending/retry: เงียบ — แถวที่ยิงแล้ว
+        // ไม่มีวันกลายเป็นการ์ดที่กดได้ (A11/A16) และ retry คิวตัวเองตาม D103 แล้ว
+    }
+
+    /**
+     * รูปร่างที่ revert ของตัวส่ง (B3a) เขียนทิ้งจริง: คู่ pending/pending + state new +
+     * reason auto_* (ร่องรอยเดียวที่เหลือหลังล้าง owner_action) + first_push_at ว่าง (A16)
+     * เจอรูปร่างนี้ = การ์ดคืนยังไม่ได้ publish ต้อง publish ต่อ ไม่สน owner_action
+     */
+    private function isRevertedFallbackPair(?object $approval, ?object $log): bool
+    {
+        return $approval !== null
+            && $log !== null
+            && (string) $log->delivery_status === LeadRecoveryLog::DELIVERY_STATUS_PENDING
+            && (string) $approval->status === FollowUpApproval::STATUS_PENDING
+            && (string) $approval->telegram_delivery_state === FollowUpApproval::TELEGRAM_STATE_NEW
+            && str_starts_with((string) ($log->reason_code ?? ''), 'auto_')
+            && $log->first_push_at === null;
     }
 }
