@@ -10,6 +10,7 @@ use App\Models\Conversation;
 use App\Models\Flow;
 use App\Models\FlowPlugin;
 use App\Models\User;
+use App\Services\FollowUp\FollowUpAutomaticRule;
 use App\Services\FollowUp\FollowUpCapabilities;
 use App\Services\FollowUp\FollowUpPipeline;
 use App\Services\FollowUp\FollowUpPrompts;
@@ -36,6 +37,7 @@ use Illuminate\Support\Str;
 use Mockery\MockInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
+use ReflectionClass;
 use ReflectionFunction;
 use ReflectionProperty;
 use RuntimeException;
@@ -1583,13 +1585,20 @@ class ScanJobTest extends TestCase
             'delivery_status' => 'approved',
             'updated_at' => '2026-11-16 09:58:00',
         ], ['status' => 'approved']);
+        // ตัวควบคุมอายุ (ห้ามผ่าน): automatic อนุมัติสดไม่ถึง 2 นาที (cutoff 09:58:00) —
+        // (a2) ต้องรอให้แถวแก่ก่อน ไม่งั้นตัดเงื่อนไขอายุทิ้งแล้วคิวแถวที่เจ้าของกำลังกดอยู่
+        $youngAutoId = $this->seedAutoPair($bot, [
+            'delivery_status' => 'approved',
+            'updated_at' => '2026-11-16 09:59:00',
+        ], ['status' => 'approved']);
         $this->assertGreaterThan($autoId, $humanId);
+        $this->assertGreaterThan($humanId, $youngAutoId);
         Queue::fake();
         $this->startLogCapture();
 
         $this->runScan();
 
-        $this->assertSame([$autoId], $this->pushedSendIds(), 'แถว automatic อนุมัติค้างถูกเก็บแม้สวิตช์ปิด ส่วนแถวคนกดไม่ถูกแตะ');
+        $this->assertSame([$autoId], $this->pushedSendIds(), 'แถว automatic อนุมัติค้างถูกเก็บแม้สวิตช์ปิด แถวคนกดและแถวอนุมัติสดไม่ถูกแตะ');
         $this->assertSame([], $this->writeTableNames(), 'การเก็บงานเขียนตารางไม่ได้');
         $this->assertSame([], $this->httpRequests, 'การเก็บงานไม่ยิง HTTP');
     }
@@ -1646,6 +1655,50 @@ class ScanJobTest extends TestCase
         $this->assertNull($fallbackLog->first_push_at, 'การ์ดคืนไม่ยิง LINE — ยังไม่มี first_push_at');
     }
 
+    /** @return array<string, array{0: string}> ทุกค่าคงที่ AUTO_* ของ FollowUpAutomaticRule — E3 ต้องเสนอครบ รายการไหนหายจาก AUTO_FALLBACK_REASONS เคสนั้นต้องล้ม */
+    public static function provideAutoFallbackReasons(): array
+    {
+        $cases = [];
+        foreach ((new ReflectionClass(FollowUpAutomaticRule::class))->getConstants() as $name => $value) {
+            if (is_string($value) && str_starts_with($name, 'AUTO_')) {
+                $cases[$name] = [$value];
+            }
+        }
+
+        return $cases;
+    }
+
+    #[Test]
+    #[DataProvider('provideAutoFallbackReasons')]
+    public function test_auto_fallback_card_offered_for_every_auto_reason(string $reason): void
+    {
+        $bot = $this->seedOpenBot();
+        DB::table('bot_settings')->where('bot_id', $bot->id)->update(['follow_up_enabled' => false]);
+        config(['customer_follow_up.bot_ids' => [$bot->id]]);
+
+        // รูปร่าง "ที่ revert ของตัวส่งทิ้งจริง" เหมือนเทสคืนการ์ดข้างบน เปลี่ยนแค่ reason_code —
+        // งานใช้คำ auto_* แต่ E3 ใช้ลิสต์ AUTO_FALLBACK_REASONS สองอย่างนี้เลื่อนกันได้:
+        // รายการไหนหายจากลิสต์ แถว reason นั้นค้างจนหมดอายุโดยไม่ได้การ์ดคืนเลย
+        $rowId = $this->seedAutoPair($bot, [
+            'delivery_status' => 'pending',
+            'reason_code' => $reason,
+            'owner_action' => null,
+            'owner_action_at' => null,
+            'owner_telegram_user_id' => null,
+            'claim_token' => null,
+            'claimed_at' => null,
+            'retry_key' => null,
+            'first_push_at' => null,
+            'updated_at' => '2026-11-16 09:58:00',
+        ], ['status' => 'pending']);
+        Queue::fake();
+        $this->fakeModelApis();
+
+        $this->runScan();
+
+        $this->assertSame([$rowId], $this->pushedSendIds(), "การ์ดคืนถูกเสนอสำหรับ reason {$reason} แม้สวิตช์ปิด");
+    }
+
     #[Test]
     public function test_job_does_not_publish_reverted_shape_row_with_non_auto_reason(): void
     {
@@ -1691,12 +1744,21 @@ class ScanJobTest extends TestCase
         config(['customer_follow_up.bot_ids' => [$bot->id]]);
 
         $fallback = ['delivery_status' => 'pending', 'reason_code' => 'auto_eligibility', 'claim_token' => null, 'claimed_at' => null, 'retry_key' => null];
+        // แถวขอบทั้งสอง seed ก่อนแถว eligible — id น้อยสุด ไม่งั้นเพดาน 5 ตัดแทนกฎที่จะทดสอบ
+        // ขอบหมดอายุ: ครบวินาทีปัจจุบันพอดี = ไม่เสนอ (กฎ expires_at เป็นตัวตัด ไม่ใช่เพดาน)
+        $expiredId = $this->seedAutoPair($bot, $fallback, ['status' => 'pending', 'expires_at' => self::NOW]);
+        // ตัวควบคุม (ห้ามผ่าน): แถว approved/approved รูปร่าง revert (owner_action ว่าง) —
+        // ถ้าตัดเงื่อนไข pending ฝั่ง log/approval ออก E3 จะยื่นแถวอนุมัติของคนให้ตัวส่ง
+        // ขณะสวิตช์ปิด (งานยิง send ก่อนเสมอ ทั้งที่ step D ยังไม่เคยเสนอ)
+        $approvedShapeId = $this->seedAutoPair($bot, array_merge($fallback, [
+            'delivery_status' => 'approved',
+            'owner_action' => null,
+            'owner_action_at' => null,
+        ]), ['status' => 'approved']);
         $ids = [];
         foreach (range(0, 5) as $index) {
             $ids[] = $this->seedAutoPair($bot, $fallback, ['status' => 'pending']);
         }
-        // ขอบหมดอายุ: ครบวินาทีปัจจุบันพอดี = ไม่เสนอ
-        $expiredId = $this->seedAutoPair($bot, $fallback, ['status' => 'pending', 'expires_at' => self::NOW]);
         Queue::fake();
         $this->fakeModelApis();
 
@@ -1708,6 +1770,7 @@ class ScanJobTest extends TestCase
         sort($offered);
         $this->assertSame($expected, $offered, 'การ์ดคืนไม่เกิน 5 ต่อบอทต่อสแกน เก่าสุด (id น้อยสุด) ก่อน');
         $this->assertNotContains($expiredId, $offered, 'การ์ดที่หมดอายุแล้วไม่ถูกเสนอ');
+        $this->assertNotContains($approvedShapeId, $offered, 'แถว approved/approved ไม่ถูกเสนอเป็นการ์ดคืน');
 
         // plugin แจ้งเตือนหาย = ไม่เสนอการ์ดคืนเลย (แถวค้างจนหมดอายุตามปกติ)
         DB::table('flow_plugins')->where('type', 'telegram')->update(['enabled' => false]);
