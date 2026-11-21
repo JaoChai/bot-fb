@@ -1647,6 +1647,43 @@ class ScanJobTest extends TestCase
     }
 
     #[Test]
+    public function test_job_does_not_publish_reverted_shape_row_with_non_auto_reason(): void
+    {
+        $bot = $this->seedOpenBot();
+        DB::table('bot_settings')->where('bot_id', $bot->id)->update(['follow_up_enabled' => false]);
+        config(['customer_follow_up.bot_ids' => [$bot->id]]);
+
+        // รูปร่างเดียวกับแถวคืนที่ถูก publish ได้ในเทสบน ต่างกัน "เฉพาะ reason_code" —
+        // การ์ดของมนุษย์ (reason ไม่ใช่ auto_*) ตรงรูปร่าง pending/pending + state new +
+        // first_push ว่างทุกอย่าง งานที่วิ่งซ้ำ/งานเก่าค้างห้าม publish แทน step D:
+        // คำ auto_* ฝั่งงานคือกันชั้นสุดท้าย ไม่งั้นการ์ดคนถูกยิงซ้ำนอกสายตา step D
+        $humanShapeId = $this->seedAutoPair($bot, [
+            'delivery_status' => 'pending',
+            'reason_code' => 'daily_cap',
+            'owner_action' => null,
+            'owner_action_at' => null,
+            'owner_telegram_user_id' => null,
+            'claim_token' => null,
+            'claimed_at' => null,
+            'retry_key' => null,
+            'first_push_at' => null,
+            'updated_at' => '2026-11-16 09:58:00',
+        ], ['status' => 'pending']);
+        Queue::fake();
+        $this->fakeModelApis();
+
+        (new SendCustomerFollowUp($humanShapeId))->handle(app(FollowUpSendService::class), app(FollowUpTelegramService::class));
+
+        $this->assertCount(0, $this->sendMessageRequests(), 'งานไม่ publish แถวรูปร่าง revert ที่ reason ไม่ใช่ auto_* — ศูนย์ Telegram');
+        $this->assertSame([], $this->httpRequests, 'งานเงียบสนิท — ศูนย์คำขอ Telegram/LINE');
+        $this->assertSame('new', (string) $this->approvalRow($humanShapeId)->telegram_delivery_state, 'state คง new — การ์ดคนยังรอ step D เสนอตามปกติ');
+        $humanLogId = (int) DB::table('follow_up_approvals')->where('id', $humanShapeId)->value('lead_recovery_log_id');
+        $humanLog = DB::table('lead_recovery_logs')->where('id', $humanLogId)->first();
+        $this->assertSame('pending', (string) $humanLog->delivery_status, 'แถวยัง pending/pending คงเดิม');
+        $this->assertSame('daily_cap', (string) $humanLog->reason_code, 'งานเงียบไม่แตะ reason เดิม');
+    }
+
+    #[Test]
     public function test_auto_fallback_card_offer_bounds_plugin_expiry_and_limit(): void
     {
         $bot = $this->seedOpenBot();
@@ -1806,6 +1843,9 @@ class ScanJobTest extends TestCase
         }
         // sending ค้างเกิน 120 วิ (claim ตาย) = เสนอ เพื่อให้ CAS ปิดเป็น unknown ไม่ยิงซ้ำ
         $ids[] = $this->seedSentAutoNotice($bot, ['telegram_delivery_state' => 'sending', 'updated_at' => '2026-11-16 09:57:00']);
+        // eligible ตัวที่หก — เพดาน 5 ต่อบอทต่อสแกนต้องตัดมัน (เก่าสุด id น้อยสุดได้เปรียบ)
+        // แถวนี้ stale พอสมควรถูกเสนอได้ทุกประการ เกินได้เพียงเพดานเท่านั้นที่ตัด
+        $cappedByLimitId = $this->seedSentAutoNotice($bot, ['telegram_delivery_state' => 'sending', 'updated_at' => '2026-11-16 09:57:30']);
         // sending ยังสด = ไม่เสนอ (claim ยังทำงานอยู่)
         $youngSendingId = $this->seedSentAutoNotice($bot, ['telegram_delivery_state' => 'sending', 'updated_at' => '2026-11-16 09:59:40']);
         // แจ้งแล้ว = ไม่เสนอ
@@ -1819,7 +1859,8 @@ class ScanJobTest extends TestCase
         sort($expected);
         $offered = $this->pushedSendIds();
         sort($offered);
-        $this->assertSame($expected, $offered, 'เสนอเฉพาะ state new และ sending ค้าง ไม่เกิน 5 ต่อบอทต่อสแกน');
+        $this->assertSame($expected, $offered, 'เสนอเฉพาะ state new และ sending ค้าง — eligible หกแถวเสนอแค่ห้าเก่าสุดเท่านั้น');
+        $this->assertNotContains($cappedByLimitId, $offered, 'เพดาน 5 ต่อบอทต่อสแกนตัดที่เกิน — id ใหม่สุดของ eligible ไม่ถูกเสนอ');
         $this->assertNotContains($youngSendingId, $offered, 'sending ที่ยังสดไม่ถูกเสนอ');
         $this->assertNotContains($noticedId, $offered, 'แถวที่แจ้งแล้วไม่ถูกเสนอ');
     }
