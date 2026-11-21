@@ -2016,9 +2016,100 @@ class SendTest extends TestCase
         $this->assertSame('pending', $log->delivery_status, 'ต้องคืนเป็นคู่ pending');
         $this->assertSame('auto_switch_off', $log->reason_code);
         $this->assertNull($log->owner_action);
+        $this->assertNull($log->owner_action_at, 'ล้างเวลาตัดสินด้วย');
+        $this->assertNull($log->owner_telegram_user_id, 'ล้าง telegram id ด้วย');
         $this->assertNull($log->claim_token);
+        $this->assertNull($log->claimed_at, 'ล้าง claimed_at ด้วย');
+        $this->assertNull($log->retry_key, 'ล้าง retry key ที่ claim ให้ไปด้วย');
+        $this->assertSame(0, (int) $log->attempt_number, 'ห้ามนับ attempt เมื่อไม่ได้ยิง');
         $this->assertNull($log->first_push_at, 'ห้าม freeze เมื่อกติกาพังก่อนยิง');
         $this->assertSame('pending', $this->approvalRow($seed)->status);
+    }
+
+    #[Test]
+    public function test_stale_claim_sending_row_with_gate_change_falls_back_to_card(): void
+    {
+        // A20: worker ตายก่อน freeze ทิ้งแถว sending/sending ถือ token เก่า — reconcile
+        // ไม่เลือกแถว sending ดังนั้นตัวส่งต้องรับช่วง claim ที่ค้างเกิน 10 นาทีเอง
+        // แล้วคืนการ์ดปกติตามกติกา ไม่ปล่อยแถวค้างตายตลอด
+        $seed = $this->seedAutomaticReady([
+            'delivery_status' => 'sending',
+            'claim_token' => 'dead-claim-token',
+            'claimed_at' => '2026-11-16 09:30:00',
+            'updated_at' => '2026-11-16 09:30:00',
+            'retry_key' => $this->retryKey(),
+        ], ['status' => 'sending']);
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
+        $telegram = Mockery::mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->once()->with($seed['approvalId'], Mockery::any())->andReturn('sent');
+        app()->instance(FollowUpTelegramService::class, $telegram);
+        $this->fakeNothing();
+
+        $result = $this->send($seed);
+
+        $this->assertSame('blocked', $result);
+        Http::assertNothingSent();
+        $log = $this->logRow($seed);
+        $this->assertSame('pending', $log->delivery_status);
+        $this->assertSame('auto_switch_off', $log->reason_code);
+        $this->assertNull($log->owner_action);
+        $this->assertNull($log->owner_action_at);
+        $this->assertNull($log->owner_telegram_user_id);
+        $this->assertNull($log->claim_token);
+        $this->assertNull($log->claimed_at);
+        $this->assertNull($log->retry_key);
+        $this->assertNull($log->first_push_at);
+        $this->assertSame('pending', $this->approvalRow($seed)->status);
+    }
+
+    #[Test]
+    public function test_expired_claimed_automatic_row_gate_change_ends_expired_without_card(): void
+    {
+        // บัตรหมดอายุ + กติกาพัง บนแถวที่ยังถือ claim ค้าง — ปลด claim ด้วยจุดจบ expired
+        // ตามเดิม (ไม่มีงานไหนเลือกแถว sending ค้าง) และห้ามมีการ์ดที่กดได้เด็ดขาด
+        $seed = $this->seedAutomaticReady([
+            'delivery_status' => 'sending',
+            'claim_token' => 'dead-claim-token',
+            'claimed_at' => '2026-11-16 09:30:00',
+            'updated_at' => '2026-11-16 09:30:00',
+            'retry_key' => $this->retryKey(),
+        ], ['status' => 'sending', 'expires_at' => '2026-11-16 09:00:00']);
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
+        $telegram = Mockery::mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->never();
+        app()->instance(FollowUpTelegramService::class, $telegram);
+        $this->fakeNothing();
+
+        $result = $this->send($seed);
+
+        $this->assertSame('blocked', $result);
+        Http::assertNothingSent();
+        $log = $this->logRow($seed);
+        $this->assertSame('expired', $log->delivery_status);
+        $this->assertSame('expired_before_send', $log->reason_code);
+        $this->assertSame('expired', $this->approvalRow($seed)->status);
+        $this->assertClaimCleared($seed);
+        $this->assertNull($log->first_push_at);
+    }
+
+    #[Test]
+    public function test_expired_unclaimed_automatic_row_gate_change_blocks_without_write(): void
+    {
+        // บัตรหมดอายุ + กติกาพัง บนคู่ approved ที่ยังไม่ถูกยืม — ไม่เขียนอะไรเลย
+        // (reconciler เป็นคนปลดคู่นี้ตามปกติ) และไม่มีการ์ด
+        $seed = $this->seedAutomaticReady([], ['expires_at' => '2026-11-16 09:00:00']);
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
+        $telegram = Mockery::mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->never();
+        app()->instance(FollowUpTelegramService::class, $telegram);
+        $this->fakeNothing();
+        $before = $this->snapshot($seed);
+
+        $result = $this->send($seed);
+
+        $this->assertSame('blocked', $result);
+        Http::assertNothingSent();
+        $this->assertSame($before, $this->snapshot($seed), 'หมดอายุและไม่ถือ claim = ไม่เขียนอะไร');
     }
 
     // ------------------------------------------------------------------

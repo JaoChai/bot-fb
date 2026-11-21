@@ -49,6 +49,9 @@ class FollowUpPipeline
     public function prepare(int $logId, ?CarbonImmutable $now = null): void
     {
         // เวลาในตารางเป็นกรุงเทพฯ ไม่มีโซน — normalize ที่ประตูเดียวเหมือน B2
+        // B3a: จำไว้ด้วยว่าผู้เรียกส่งนาฬิกามาเองหรือไม่ — งานจริงไม่ส่ง นาฬิกา "ตัดสินส่งเอง"
+        // ต้องอ่านใหม่ ณ จุดตัดสินใน transaction (A4: owner_action_at = เวลาตัดสิน)
+        $explicitNow = $now;
         $now = ($now ?? CarbonImmutable::now())
             ->tz(FollowUpCapabilities::TIMEZONE)
             ->startOfSecond();
@@ -273,7 +276,7 @@ class FollowUpPipeline
         $expiry = $now->addHours((int) config('customer_follow_up.approval_ttl_hours'))->format('Y-m-d H:i:s');
 
         try {
-            DB::transaction(function () use ($logId, $log, $token, $now, $draft, $check, $checkAnswers, $earlierCost, $runCosts, $usageSteps, $expiry, $nowStr): void {
+            DB::transaction(function () use ($logId, $log, $token, $now, $explicitNow, $draft, $check, $checkAnswers, $earlierCost, $runCosts, $usageSteps, $expiry, $nowStr): void {
                 if (! $this->reservations->markDraftProduced($log, $token, $now)) {
                     // แถวโดนเปลี่ยน claim_token ระหว่าง draft กับ persist — ยกเลิกทุกการเขียน
                     throw new RuntimeException('follow_up_claim_lost');
@@ -310,21 +313,27 @@ class FollowUpPipeline
                 // เหมือน main เป๊ะ ไม่มีคำสั่งเพิ่ม ไม่มี reason ใหม่ กฎอ่าน database เท่านั้น
                 // (ไม่มี HTTP/โควต้าใน transaction) และตัดสินจากแถวที่เพิ่งบันทึกใน transaction เดียวกัน
                 if ($this->automaticCandidate((int) $log->bot_id)) {
+                    // นาฬิกาตัดสิน — ผู้เรียกส่งมาเอง (เทส inject เวลา) ใช้ค่านั้น, ไม่ส่ง =
+                    // อ่าน "ณ บรรทัดนี้" หลัง sort/draft/check กินเวลาไปแล้ว ไม่ใช่นาฬิกาเริ่ม prepare
+                    $decisionNow = ($explicitNow ?? CarbonImmutable::now())
+                        ->tz(FollowUpCapabilities::TIMEZONE)
+                        ->startOfSecond();
+                    $decisionNowStr = $decisionNow->format('Y-m-d H:i:s');
                     $autoLog = LeadRecoveryLog::query()->findOrFail($logId);
                     $autoApproval = DB::table('follow_up_approvals')->where('id', $approvalId)->first();
-                    $autoReason = $this->autoRule->reason($autoLog, $autoApproval, $now);
+                    $autoReason = $this->autoRule->reason($autoLog, $autoApproval, $decisionNow);
 
                     if ($autoReason === null) {
                         $this->write($logId, [
                             'delivery_status' => LeadRecoveryLog::DELIVERY_STATUS_APPROVED,
                             'owner_action' => LeadRecoveryLog::OWNER_ACTION_AUTOMATIC,
-                            'owner_action_at' => $nowStr,
+                            'owner_action_at' => $decisionNowStr,
                             'owner_telegram_user_id' => null,
-                            'updated_at' => $nowStr,
+                            'updated_at' => $decisionNowStr,
                         ]);
                         DB::table('follow_up_approvals')
                             ->where('id', $approvalId)
-                            ->update(['status' => FollowUpApproval::STATUS_APPROVED, 'updated_at' => $nowStr]);
+                            ->update(['status' => FollowUpApproval::STATUS_APPROVED, 'updated_at' => $decisionNowStr]);
                     } else {
                         $this->write($logId, ['reason_code' => $autoReason, 'updated_at' => $nowStr]);
                     }

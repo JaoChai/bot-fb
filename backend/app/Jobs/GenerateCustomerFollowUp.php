@@ -63,8 +63,8 @@ class GenerateCustomerFollowUp implements ShouldQueue
             if ($logState !== null
                 && (string) $logState->delivery_status === LeadRecoveryLog::DELIVERY_STATUS_APPROVED
                 && (string) $logState->owner_action === LeadRecoveryLog::OWNER_ACTION_AUTOMATIC
-                && (string) $approval->status === FollowUpApproval::STATUS_APPROVED
-                && (string) $approval->telegram_delivery_state === FollowUpApproval::TELEGRAM_STATE_NEW
+                && (string) ($approval?->status) === FollowUpApproval::STATUS_APPROVED
+                && (string) ($approval?->telegram_delivery_state) === FollowUpApproval::TELEGRAM_STATE_NEW
             ) {
                 SendCustomerFollowUp::dispatch((int) $approval->id);
             }

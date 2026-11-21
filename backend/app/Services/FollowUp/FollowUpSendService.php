@@ -100,7 +100,24 @@ class FollowUpSendService
                 // คืนเป็นการ์ดปกติ ไม่ยิง; โครงสร้างผิด (ปลอม) = fail closed แบบไม่เขียน
                 if ($log->owner_action === LeadRecoveryLog::OWNER_ACTION_AUTOMATIC
                     && str_starts_with($ownerReason, 'auto_')) {
-                    return $this->revertAutomaticToPending($approvalId, $logId, $botId, null, $ownerReason, $now, $nowStr);
+                    // A20: แถว sending ที่ถือ claim ค้างเกิน 10 นาที = worker ตายก่อน freeze
+                    // (reconcile ไม่เลือกแถว sending) — รับช่วงด้วย CAS บน token ที่เห็น;
+                    // token ที่ยังสด = เจ้าของกำลังทำงาน ให้จบเองที่ A14 จุดเดียวกัน
+                    $staleCutoff = $now->subMinutes(self::CLAIM_STALE_MINUTES)->format('Y-m-d H:i:s');
+                    $observedToken = (string) ($log->claim_token ?? '');
+                    if ($observedToken !== '' && (string) $log->updated_at > $staleCutoff) {
+                        return $this->finish($approvalId, $logId, $botId, 'blocked', $ownerReason);
+                    }
+
+                    return $this->revertAutomaticToPending(
+                        $approvalId,
+                        $logId,
+                        $botId,
+                        $observedToken === '' ? null : $observedToken,
+                        $ownerReason,
+                        $now,
+                        $nowStr,
+                    );
                 }
 
                 return $this->finish($approvalId, $logId, $botId, 'blocked', $ownerReason);
@@ -622,7 +639,13 @@ class FollowUpSendService
     {
         $expiry = DB::table('follow_up_approvals')->where('id', $approvalId)->value('expires_at');
         if ($expiry !== null && $nowStr >= (string) $expiry) {
-            // หมดอายุแล้ว — จบแบบไม่มีการ์ด reconciler เป็นคนปลดคู่นี้ตามปกติ
+            // บัตรหมดอายุ — ไม่มีการ์ดที่กดได้เด็ดขาด; แถวที่ยังถือ claim (สาย A14 หรือ
+            // รับช่วง worker ตาย) ปลด claim ด้วยจุดจบ expired เดิม เพราะไม่มีงานไหน
+            // เลือกแถว sending ค้างไว้ได้; คู่ approved ที่ยังไม่ถูกยืมให้ reconciler ปลดตามปกติ
+            if ($token !== null) {
+                return $this->endWrite($approvalId, $logId, $botId, $token, 'expired', 'expired', 'expired_before_send', 'blocked', $nowStr);
+            }
+
             return $this->finish($approvalId, $logId, $botId, 'blocked', $reason);
         }
 

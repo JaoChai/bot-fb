@@ -1438,6 +1438,158 @@ class PipelineTest extends TestCase
         $this->assertGreaterThan(self::NOW, (string) $approval->expires_at, 'บัตรยังไม่หมดอายุ = claim ได้');
     }
 
+    #[Test]
+    public function test_approve_mode_with_bot_in_host_list_writes_identical_to_main(): void
+    {
+        // สถานะ go-live ตอน Lead เปิด env ก่อนแต่เจ้าของยังไม่สลับโหมด (A10): บอทอยู่ใน
+        // host list แต่ mode ยัง approve — เขียนเหมือน main เป๊ะ ไม่มี reason ใหม่ ไม่มี owner_action
+        $bot = $this->seedBot();
+        config(['customer_follow_up.automatic_bot_ids' => [$bot->id]]); // mode ยัง approve
+        $room = $this->makeRoom($bot, 'UAH1');
+        $logId = $this->makeLog($room);
+        $this->fakeDecisions();
+        $this->fakeWriter();
+
+        $this->runPrepare($logId);
+
+        $row = $this->logRow($logId);
+        $this->assertSame('pending', $row->delivery_status);
+        $this->assertNull($row->reason_code, 'mode approve ห้ามมี reason code ใหม่ (A2)');
+        $this->assertNull($row->owner_action);
+        $this->assertNull($row->owner_action_at);
+        $this->assertNull($row->owner_telegram_user_id);
+        $approval = DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId)->first();
+        $this->assertSame('pending', $approval->status);
+        $this->assertSame('new', $approval->telegram_delivery_state);
+        $this->assertSame(2, count($this->decisionRequests), 'สาขา approve ต้องไม่เรียกกฎเพิ่ม');
+        $this->assertSame(1, $this->usedSlots($bot->id, '2026-11-16'));
+    }
+
+    #[Test]
+    public function test_moving_clock_rule_failure_is_decided_at_decision_time_not_prepare_start(): void
+    {
+        // เริ่มร่าง 21:59:40 (ยังอยู่ในชั่วโมงส่ง) นาฬิกาเดินข้าม 22:00 ก่อนถึงจุดตัดสิน —
+        // ผู้ตัดสินต้องใช้นาฬิกา "ตอนตัดสิน" (22:00:10 นอกชั่วโมงส่ง = กฎปฏิเสธ) ไม่ใช่นาฬิกาเริ่มงาน
+        $bot = $this->seedAutomaticBot();
+        $start = $this->at('2026-11-15 21:59:40');
+        $room = Conversation::factory()->line()->create([
+            'bot_id' => $bot->id,
+            'external_customer_id' => 'UAM1',
+        ]);
+        $this->addMessage($room->id, 'user', '2026-11-14 21:50:00', 'สนใจสินค้าครับ');
+        $this->addMessage($room->id, 'user', '2026-11-14 21:55:00', 'ประเมินราคาให้หน่อยครับ');
+        FollowUpSalesProjector::refresh($room, $start);
+        $logId = $this->makeLog($room, $start);
+        $this->fakeDecisions();
+        $this->fakeWriter(onCall: function (): void {
+            Carbon::setTestNow($this->at('2026-11-15 22:00:10'));
+            CarbonImmutable::setTestNow($this->at('2026-11-15 22:00:10'));
+        });
+        // production contract: งานเรียก prepare โดยไม่ส่งนาฬิกา — หยุดนาฬิกาไว้ที่เวลาเริ่มงาน
+        // แล้วให้มันเดิน (เฟก) ระหว่าง draft เพื่อให้จุดตัดสินอ่านเจอเวลาใหม่
+        Carbon::setTestNow($start);
+        CarbonImmutable::setTestNow($start);
+
+        app(FollowUpPipeline::class)->prepare($logId);
+
+        $row = $this->logRow($logId);
+        $this->assertSame('pending', $row->delivery_status, '22:00:10 นอกชั่วโมงส่ง = กฎปฏิเสธ ห้ามอนุมัติเอง');
+        $this->assertSame('auto_eligibility', $row->reason_code);
+        $this->assertNull($row->owner_action);
+        $this->assertNull($row->owner_action_at);
+        $approval = DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId)->first();
+        $this->assertSame('pending', $approval->status);
+        $this->assertSame('new', $approval->telegram_delivery_state);
+    }
+
+    #[Test]
+    public function test_moving_clock_owner_action_at_records_the_decision_time(): void
+    {
+        // กรณีกฎผ่าน: เวลาตัดสิน (A4) ต้องเป็นนาฬิกา ณ จุดตัดสิน (10:00:10) ไม่ใช่เวลาเริ่มงาน (09:59:40)
+        $bot = $this->seedAutomaticBot();
+        $start = $this->at('2026-11-15 09:59:40');
+        $room = Conversation::factory()->line()->create([
+            'bot_id' => $bot->id,
+            'external_customer_id' => 'UAM2',
+        ]);
+        $this->addMessage($room->id, 'user', '2026-11-14 09:50:00', 'สนใจสินค้าครับ');
+        $this->addMessage($room->id, 'user', '2026-11-14 09:55:00', 'ประเมินราคาให้หน่อยครับ');
+        FollowUpSalesProjector::refresh($room, $start);
+        $logId = $this->makeLog($room, $start);
+        $this->fakeDecisions();
+        $this->fakeWriter(onCall: function (): void {
+            Carbon::setTestNow($this->at('2026-11-15 10:00:10'));
+            CarbonImmutable::setTestNow($this->at('2026-11-15 10:00:10'));
+        });
+        Carbon::setTestNow($start);
+        CarbonImmutable::setTestNow($start);
+
+        app(FollowUpPipeline::class)->prepare($logId);
+
+        $row = $this->logRow($logId);
+        $this->assertSame('approved', $row->delivery_status);
+        $this->assertSame('automatic', $row->owner_action);
+        $this->assertSame('2026-11-15 10:00:10', (string) $row->owner_action_at, 'owner_action_at = เวลาตัดสิน');
+        $this->assertSame('2026-11-15 10:00:10', (string) $row->updated_at, 'อัปเกรดเขียน updated_at ด้วยเวลาตัดสิน');
+        $this->assertNull($row->reason_code);
+        $approval = DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId)->first();
+        $this->assertSame('approved', $approval->status);
+        $this->assertSame('2026-11-15 10:00:10', (string) $approval->updated_at);
+    }
+
+    #[Test]
+    public function test_job_dispatch_needs_automatic_owner_action_and_new_state(): void
+    {
+        // ปักเงื่อนไข dispatch ของงาน: คู่ approved จะส่งต่อได้ต้อง owner_action = automatic
+        // และ state = new พร้อมกัน — ขาดข้อใดข้อหนึ่ง = ไม่ dispatch ไม่เสนอการ์ด
+        Bus::fake([SendCustomerFollowUp::class]);
+        $cases = [
+            'owner_action_not_automatic' => function (int $logId, int $approvalId): void {
+                DB::table('lead_recovery_logs')->where('id', $logId)->update(['owner_action' => null]);
+            },
+            'delivery_state_not_new' => function (int $logId, int $approvalId): void {
+                DB::table('follow_up_approvals')->where('id', $approvalId)->update(['telegram_delivery_state' => 'sending']);
+            },
+        ];
+
+        foreach ($cases as $label => $mutate) {
+            $bot = $this->seedAutomaticBot();
+            $room = $this->makeRoom($bot, 'UAJ'.md5($label));
+            $logId = $this->makeLog($room);
+            $this->fakeDecisions();
+            $this->fakeWriter();
+            $this->runPrepare($logId);
+            $approvalId = (int) DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId)->value('id');
+            $mutate($logId, $approvalId);
+            $telegram = $this->mock(FollowUpTelegramService::class);
+            $telegram->shouldReceive('publish')->never();
+
+            (new GenerateCustomerFollowUp($logId))->handle(app(FollowUpPipeline::class), $telegram);
+
+            Bus::assertNotDispatched(SendCustomerFollowUp::class, "เคส {$label} ห้าม dispatch");
+        }
+    }
+
+    #[Test]
+    public function test_job_with_log_but_missing_approval_row_ends_quietly(): void
+    {
+        // แถว forged (log approved/automatic แต่บัตรหาย) — งานต้องจบเงียบ ไม่ dispatch ไม่ publish
+        Bus::fake([SendCustomerFollowUp::class]);
+        $bot = $this->seedAutomaticBot();
+        $room = $this->makeRoom($bot, 'UAN1');
+        $logId = $this->makeLog($room);
+        $this->fakeDecisions();
+        $this->fakeWriter();
+        $this->runPrepare($logId);
+        DB::table('follow_up_approvals')->where('lead_recovery_log_id', $logId)->delete();
+        $telegram = $this->mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->never();
+
+        (new GenerateCustomerFollowUp($logId))->handle(app(FollowUpPipeline::class), $telegram);
+
+        Bus::assertNotDispatched(SendCustomerFollowUp::class);
+    }
+
     // ------------------------------------------------------------------
     // Fixtures and helpers
     // ------------------------------------------------------------------
