@@ -1986,6 +1986,41 @@ class SendTest extends TestCase
         $this->assertContains('settings', $between, 'A1 re-read (bot_settings) ต้องอยู่ระหว่าง last look กับ freeze: '.implode(',', $order));
     }
 
+    #[Test]
+    public function test_gate_change_during_send_flow_stops_the_push_before_freeze(): void
+    {
+        // A14 แบบมีเงื่อนไขเปลี่ยนจริง "ระหว่างสายยิง": Step A ผ่านหมด แล้ว kill switch
+        // โดนปิดพอดีหลัง last look ยิง — ต้องอ่านเจอและคืนการ์ด ห้ามยิงออก LINE
+        $seed = $this->seedAutomaticReady();
+        $this->fakeLine();
+        $telegram = Mockery::mock(FollowUpTelegramService::class);
+        $telegram->shouldReceive('publish')->once()->with($seed['approvalId'], Mockery::any())->andReturn('sent');
+        app()->instance(FollowUpTelegramService::class, $telegram);
+        $flipped = false;
+        DB::connection()->beforeExecuting(function ($query) use (&$flipped, $seed): void {
+            $sql = strtolower(trim((string) $query));
+            if (! $flipped && str_contains($sql, 'select max("id") as "aggregate" from "messages"')) {
+                $flipped = true;
+                DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
+            }
+        });
+
+        $result = $this->send($seed);
+
+        DB::connection()->beforeExecuting(function (): void {});
+
+        $this->assertSame('blocked', $result);
+        // โควต้า GET อ่านก่อน freeze ตามปกติ (step 5) — สิ่งที่ห้ามเกิดคือ push
+        $this->assertPushCount(0, 'กติกาพังหลัง last look ต้องไม่ยิงออก LINE');
+        $log = $this->logRow($seed);
+        $this->assertSame('pending', $log->delivery_status, 'ต้องคืนเป็นคู่ pending');
+        $this->assertSame('auto_switch_off', $log->reason_code);
+        $this->assertNull($log->owner_action);
+        $this->assertNull($log->claim_token);
+        $this->assertNull($log->first_push_at, 'ห้าม freeze เมื่อกติกาพังก่อนยิง');
+        $this->assertSame('pending', $this->approvalRow($seed)->status);
+    }
+
     // ------------------------------------------------------------------
     // Rejected — จบทันที ไม่มีประวัติ ครั้งถัดไปเงียบ
     // ------------------------------------------------------------------
