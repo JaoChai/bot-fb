@@ -24,9 +24,10 @@ use Throwable;
  * ทำงานเรียบง่าย: เรียกตัวส่งครั้งเดียว (B4) อ่านสถานะปลายทาง "ที่ commit แล้ว" ของแถว
  * แถวมนุษย์: ระบายการ์ด Telegram เมื่อถึงจุดจบ (sent/cancelled/expired) เท่านั้น (D102)
  * แถว automatic: sent/sent = แจ้งห้องเตือนครั้งเดียว (B2 publishAutomaticNotice, CAS
- * กันยิงซ้ำ) ไม่มีวันระบายการ์ด; pending/pending state new reason auto_* = คืนการ์ด
- * ปกติ (publish) กรณี revert ของตัวส่ง publish ไม่สำเร็จ; จุดจบอื่นและ sending/retry =
- * เงียบ — แถวที่ยิงแล้ว (first_push set) ไม่มีวันกลายเป็นการ์ด (A11/A16)
+ * กันยิงซ้ำ) ไม่มีวันระบายการ์ด; pending/pending state new reason auto_* first_push_at
+ * ว่าง = คืนการ์ดปกติ (publish) — ตัดสินที่ "รูปร่างที่ revert ของตัวส่งทิ้งจริง" ไม่ผูก
+ * owner_action เพราะ revert ล้างมันทิ้ง; จุดจบอื่นและ sending/retry = เงียบ — แถวที่ยิงแล้ว
+ * (first_push set) ไม่มีวันกลายเป็นการ์ด (A11/A16)
  *
  * แถวที่ถูกคืนกลับ approved คงการ์ด ⏳ เดิม ยิง LINE แล้วยังไม่เข้า (retry) = คิวงาน
  * ตัวเองซ้ำ เลื่อนถึง next_attempt_at ของแถว (D103); งานหายให้ step E ของสแกนเป็นคนเก็บ
@@ -60,8 +61,11 @@ class SendCustomerFollowUp implements ShouldQueue
                 ->where('id', (int) $approval->lead_recovery_log_id)
                 ->first();
 
+        // เส้นทาง automatic: ผูก owner_action (แถวที่ตัดสินส่งเอง) หรือรูปร่างที่ revert ของ
+        // ตัวส่งทิ้งจริง — revert ล้าง owner_action ทิ้ง การ์ดคืนจึงต้องอ่านจากรูปร่างแทน
         if ($log !== null
-            && (string) ($log->owner_action ?? '') === LeadRecoveryLog::OWNER_ACTION_AUTOMATIC) {
+            && ((string) ($log->owner_action ?? '') === LeadRecoveryLog::OWNER_ACTION_AUTOMATIC
+                || $this->isRevertedFallbackPair($approval, $log))) {
             $this->routeAutomaticRow($telegram, $approval, $log);
         } elseif ($approval !== null
             && in_array((string) $approval->status, ['sent', 'cancelled', 'expired'], true)) {
@@ -125,11 +129,13 @@ class SendCustomerFollowUp implements ShouldQueue
             return;
         }
 
-        // คืนการ์ดปกติ (fallback): revert ของตัวส่งยังไม่ได้ publish — เห็นได้จาก
-        // state new + reason auto_* (revert ล้าง owner_action เหลือ reason_code ไว้)
+        // คืนการ์ดปกติ (fallback): รูปร่างที่ revert ของตัวส่งทิ้งจริง — ล้าง owner_action
+        // เหลือ state new + reason auto_* เป็นร่องรอย และยังไม่เคยยิง LINE (A16: แถวที่
+        // first_push set ไม่มีวันกลายเป็นการ์ด แม้รูปร่างอื่นตรงทั้งหมด)
         if ($pair === [LeadRecoveryLog::DELIVERY_STATUS_PENDING, FollowUpApproval::STATUS_PENDING]
             && (string) $approval->telegram_delivery_state === FollowUpApproval::TELEGRAM_STATE_NEW
-            && str_starts_with((string) ($log->reason_code ?? ''), 'auto_')) {
+            && str_starts_with((string) ($log->reason_code ?? ''), 'auto_')
+            && $log->first_push_at === null) {
             try {
                 $telegram->publish($this->approvalId);
             } catch (Throwable $publishFailure) {
@@ -144,5 +150,21 @@ class SendCustomerFollowUp implements ShouldQueue
 
         // จุดจบอื่น (cancelled/expired) และ sending/retry: เงียบ — แถวที่ยิงแล้ว
         // ไม่มีวันกลายเป็นการ์ดที่กดได้ (A11/A16) และ retry คิวตัวเองตาม D103 แล้ว
+    }
+
+    /**
+     * รูปร่างที่ revert ของตัวส่ง (B3a) เขียนทิ้งจริง: คู่ pending/pending + state new +
+     * reason auto_* (ร่องรอยเดียวที่เหลือหลังล้าง owner_action) + first_push_at ว่าง (A16)
+     * เจอรูปร่างนี้ = การ์ดคืนยังไม่ได้ publish ต้อง publish ต่อ ไม่สน owner_action
+     */
+    private function isRevertedFallbackPair(?object $approval, ?object $log): bool
+    {
+        return $approval !== null
+            && $log !== null
+            && (string) $log->delivery_status === LeadRecoveryLog::DELIVERY_STATUS_PENDING
+            && (string) $approval->status === FollowUpApproval::STATUS_PENDING
+            && (string) $approval->telegram_delivery_state === FollowUpApproval::TELEGRAM_STATE_NEW
+            && str_starts_with((string) ($log->reason_code ?? ''), 'auto_')
+            && $log->first_push_at === null;
     }
 }

@@ -63,6 +63,12 @@ class ScanJobTest extends TestCase
     /** @var list<array{url: string, data: array}> */
     private array $httpRequests = [];
 
+    /**
+     * ตั้ง true หลัง fakeModelApis() เพื่อให้ sendMessage ตอบ 500 (สคริปต์ revert/publish ล้ม) —
+     * สลับกลับ false เพื่อให้คำขอถัดไปสำเร็จ โดยไม่เรียก Http::fake ซ้ำ (stub สะสมทับกัน)
+     */
+    private bool $telegramSendMustFail = false;
+
     /** @var list<int> Approval ids offered by the real jobs, in call order. */
     private array $publishedIds = [];
 
@@ -1595,14 +1601,19 @@ class ScanJobTest extends TestCase
         DB::table('bot_settings')->where('bot_id', $bot->id)->update(['follow_up_enabled' => false]);
         config(['customer_follow_up.bot_ids' => [$bot->id]]);
 
-        // แถวคืนจาก automatic: คู่ pending/pending state new ยังไม่หมดอายุ reason auto_*
-        // (revert ของตัวส่ง B3a ล้าง owner_action เหลือ reason_code auto_* เป็นร่องรอย)
+        // แถวคืนจาก automatic — รูปร่าง "ที่ revert ของตัวส่งทิ้งจริง" (B3a, FollowUpSendService
+        // ล้าง owner_action/owner_action_at/claim หมด เหลือ reason_code auto_* เป็นร่องรอยเดียว)
+        // หน้าต่างจริงที่ E3 ต้องกู้: revert commit แล้วแต่ worker ตายก่อน publish ยึดสิทธิ์
         $fallbackId = $this->seedAutoPair($bot, [
             'delivery_status' => 'pending',
             'reason_code' => 'auto_switch_off',
+            'owner_action' => null,
+            'owner_action_at' => null,
+            'owner_telegram_user_id' => null,
             'claim_token' => null,
             'claimed_at' => null,
             'retry_key' => null,
+            'first_push_at' => null,
             'updated_at' => '2026-11-16 09:58:00',
         ], ['status' => 'pending']);
         // ตัวควบคุม (ห้ามผ่าน): การ์ดคน reason มนุษย์ บอทปิดยังไม่ถูกเสนอ
@@ -1628,6 +1639,11 @@ class ScanJobTest extends TestCase
         $this->assertSame('sent', (string) $this->approvalRow($fallbackId)->telegram_delivery_state);
         $fallbackLogId = (int) DB::table('follow_up_approvals')->where('id', $fallbackId)->value('lead_recovery_log_id');
         $this->assertSame('pending', (string) DB::table('lead_recovery_logs')->where('id', $fallbackLogId)->value('delivery_status'), 'แถวยังรอแท็ปคนหลังได้การ์ด');
+        // การ์ดถูก publish แล้วแต่รูปร่าง revert คงเดิม — การ์ดคืนไม่แตะ owner_action / claim / ร่องรอย auto_*
+        $fallbackLog = DB::table('lead_recovery_logs')->where('id', $fallbackLogId)->first();
+        $this->assertNull($fallbackLog->owner_action, 'การ์ดคืนยังคง owner_action ที่ revert ล้างไว้');
+        $this->assertSame('auto_switch_off', (string) $fallbackLog->reason_code, 'reason auto_* คงอยู่');
+        $this->assertNull($fallbackLog->first_push_at, 'การ์ดคืนไม่ยิง LINE — ยังไม่มี first_push_at');
     }
 
     #[Test]
@@ -1662,6 +1678,89 @@ class ScanJobTest extends TestCase
         $this->runScan();
 
         $this->assertSame([], $this->pushedSendIds(), 'ไม่มี plugin แจ้งเตือน = ไม่เสนอการ์ดคืน');
+    }
+
+    #[Test]
+    public function test_auto_fallback_row_with_first_push_set_never_offered_or_published(): void
+    {
+        $bot = $this->seedOpenBot();
+        DB::table('bot_settings')->where('bot_id', $bot->id)->update(['follow_up_enabled' => false]);
+        config(['customer_follow_up.bot_ids' => [$bot->id]]);
+
+        // รูปร่าง revert จริง (เหมือนแถวที่ถูกเสนอได้ในเทสบน) แต่ต่างกัน "เฉพาะ first_push_at" —
+        // แถวที่ยิง LINE แล้วห้ามกลายเป็นการ์ดที่กดได้ทุกชั้น (A16): สแกนไม่เสนอ งานไม่ publish
+        $revertedShape = [
+            'delivery_status' => 'pending',
+            'reason_code' => 'auto_switch_off',
+            'owner_action' => null,
+            'owner_action_at' => null,
+            'owner_telegram_user_id' => null,
+            'claim_token' => null,
+            'claimed_at' => null,
+            'retry_key' => null,
+            'first_push_at' => '2026-11-16 09:56:00',
+            'message_sent' => 'ร่างทดสอบ step E ส่งงาน',
+            'updated_at' => '2026-11-16 09:58:00',
+        ];
+        $pushedRevertedId = $this->seedAutoPair($bot, $revertedShape, ['status' => 'pending']);
+        // รูปร่างปลอมที่สังเคราะห์ได้ทางเดียว: owner_action automatic ค้างคู่ pending/pending + ยิงแล้ว —
+        // งานต้องเงียบเหมือนกัน (เงื่อนไข fallback ต้องมี first_push_at null เป๊ะ ไม่ใช่แค่ owner_action)
+        $frozenAutoId = $this->seedAutoPair($bot, array_merge($revertedShape, [
+            'owner_action' => 'automatic',
+            'owner_action_at' => '2026-11-16 09:52:00',
+        ]), ['status' => 'pending']);
+        Queue::fake();
+
+        $this->runScan();
+
+        $this->assertSame([], $this->pushedSendIds(), 'แถวที่ยิงแล้ว (first_push set) ไม่ถูกเสนอเป็นการ์ดคืนแม้สวิตช์ปิด (A16)');
+
+        // งานที่ถูกคิวค้างไว้ก่อนหน้า (worker ตาย) ต้องเงียบทั้งสองแถว — ไม่ Telegram ไม่ LINE
+        (new SendCustomerFollowUp($frozenAutoId))->handle(app(FollowUpSendService::class), app(FollowUpTelegramService::class));
+        (new SendCustomerFollowUp($pushedRevertedId))->handle(app(FollowUpSendService::class), app(FollowUpTelegramService::class));
+
+        $this->assertSame([], $this->httpRequests, 'งานต้องเงียบทั้งสองแถว — ศูนย์คำขอ Telegram/LINE');
+        foreach ([$frozenAutoId, $pushedRevertedId] as $id) {
+            $this->assertSame('new', (string) $this->approvalRow($id)->telegram_delivery_state, "แถว $id ไม่ถูกแตะ");
+        }
+        $frozenLogId = (int) DB::table('follow_up_approvals')->where('id', $frozenAutoId)->value('lead_recovery_log_id');
+        $this->assertSame('automatic', (string) DB::table('lead_recovery_logs')->where('id', $frozenLogId)->value('owner_action'), 'งานเงียบไม่ล้าง owner_action เอง');
+    }
+
+    #[Test]
+    public function test_real_revert_with_failed_telegram_publish_is_not_reoffered(): void
+    {
+        $bot = $this->seedOpenBot();
+        // สวิตช์ปิด = กฎ automatic เด้ง auto_switch_off → revert "จริง" ของตัวส่ง (B3a)
+        DB::table('bot_settings')->where('bot_id', $bot->id)->update(['follow_up_enabled' => false]);
+        config(['customer_follow_up.bot_ids' => [$bot->id]]);
+
+        $autoId = $this->seedAutoPair($bot, [
+            'delivery_status' => 'approved',
+            'updated_at' => '2026-11-16 09:58:00',
+        ], ['status' => 'approved']);
+        $this->fakeModelApis();
+        $this->telegramSendMustFail = true;
+
+        $result = app(FollowUpSendService::class)->send($autoId);
+
+        $this->assertSame('blocked', $result, 'สวิตช์ปิด = ตัวส่งคืนแถวเป็นการ์ด (blocked)');
+        $logId = (int) DB::table('follow_up_approvals')->where('id', $autoId)->value('lead_recovery_log_id');
+        $log = DB::table('lead_recovery_logs')->where('id', $logId)->first();
+        $this->assertSame('pending', (string) $log->delivery_status);
+        $this->assertSame('auto_switch_off', (string) $log->reason_code);
+        $this->assertNull($log->owner_action);
+        $this->assertNull($log->claim_token);
+        // publish ของ revert โดน sendMessage 500 → state จบที่ unknown ไม่ใช่ new —
+        // Telegram ถูกถามไปแล้วครั้งหนึ่ง ชีวิตการ์ดนี้จึงหมดสิทธิ์เสนอซ้ำ (D70)
+        $this->assertSame('unknown', (string) $this->approvalRow($autoId)->telegram_delivery_state, 'publish ล้ม → state unknown ไม่ใช่ new');
+
+        Queue::fake();
+        $this->httpRequests = [];
+        $this->runScan();
+
+        $this->assertSame([], $this->pushedSendIds(), 'แถว state unknown ไม่ถูกเสนอซ้ำ — E3 ห้ามยิง Telegram ซ้ำ (D70)');
+        $this->assertSame([], $this->httpRequests, 'สแกนหลัง publish ล้มไม่มีคำขอ Telegram/LINE ใด ๆ');
     }
 
     #[Test]
@@ -1991,6 +2090,10 @@ class ScanJobTest extends TestCase
                 }
 
                 return Http::response(['answers' => $checkAnswer, 'usage' => $checkUsage]);
+            }
+
+            if ($this->telegramSendMustFail && str_contains($request->url(), '/sendMessage')) {
+                return Http::response(['ok' => false, 'error_code' => 500], 500);
             }
 
             return Http::response(['ok' => true, 'result' => ['message_id' => 4242]], 200);

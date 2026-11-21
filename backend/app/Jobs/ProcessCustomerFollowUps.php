@@ -312,9 +312,10 @@ class ProcessCustomerFollowUps implements ShouldQueue
 
     /**
      * E3 — การ์ดคืนจาก automatic (B3b): คู่ pending/pending state new ยังไม่หมดอายุ
-     * reason_code auto_* (ร่องรอยที่ revert ของตัวส่งทิ้งไว้ กรณี publish ไม่สำเร็จ)
-     * เก่าสุดก่อน ไม่เกิน 5 ต่อบอทต่อสแกน คิวเสมอแม้สวิตช์ปิด — แต่ต้องยังมี
-     * plugin แจ้งเตือน ไม่งั้นปล่อยค้างจนหมดอายุตามปกติ
+     * reason_code auto_* (ร่องรอยที่ revert ของตัวส่งทิ้งไว้ กรณี worker ตายก่อน publish)
+     * และ first_push_at ว่าง (A16: แถวที่ยิงแล้วไม่มีวันกลายเป็นการ์ด) เก่าสุดก่อน
+     * ไม่เกิน 5 ต่อบอทต่อสแกน คิวเสมอแม้สวิตช์ปิด — แต่ต้องยังมี plugin แจ้งเตือน
+     * ไม่งั้นปล่อยค้างจนหมดอายุตามปกติ
      *
      * @return int จำนวนงานที่คิวรอบนี้
      */
@@ -333,6 +334,7 @@ class ProcessCustomerFollowUps implements ShouldQueue
             ->where('a.status', FollowUpApproval::STATUS_PENDING)
             ->where('a.telegram_delivery_state', FollowUpApproval::TELEGRAM_STATE_NEW)
             ->where('a.expires_at', '>', $now->format('Y-m-d H:i:s'))
+            ->whereNull('l.first_push_at')
             ->whereIn('l.reason_code', self::AUTO_FALLBACK_REASONS)
             ->orderBy('a.id')
             ->limit(self::MAX_AUTO_FALLBACK_CARDS)
