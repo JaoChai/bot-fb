@@ -134,10 +134,13 @@ class ResponseHoursGateTest extends TestCase
         $slotListNull = $this->botWithHours(['mon' => null]);
         $this->assertSame('day_closed', FollowUpResponseHours::closureReason((int) $slotListNull->id, $this->at('2026-11-16 10:00:00')));
 
-        // response_hours เป็น string JSON ที่อ่านไม่ออก → ไม่จำกัด (เท่าค่าว่าง)
+        // response_hours ที่ decode แล้วไม่ใช่ array → ไม่จำกัด
+        // (คอลัมน์ json ของ PostgreSQL เขียน JSON เสียไม่ได้ จึงทดสอบด้วยเอกสาร JSON ที่ถูกต้องแต่รูปร่างไม่ใช่ map)
         $bot = $this->botWithHours(null);
-        DB::table('bot_settings')->where('bot_id', $bot->id)->update(['response_hours' => '{not-json']);
-        $this->assertNull(FollowUpResponseHours::closureReason((int) $bot->id, $this->at('2026-11-16 10:00:00')));
+        DB::table('bot_settings')->where('bot_id', $bot->id)->update(['response_hours' => json_encode('mon')]);
+        $this->assertNull(FollowUpResponseHours::closureReason((int) $bot->id, $this->at('2026-11-16 10:00:00')), 'JSON ที่เป็น string ไม่ใช่ array = ไม่จำกัด');
+        DB::table('bot_settings')->where('bot_id', $bot->id)->update(['response_hours' => 'null']);
+        $this->assertNull(FollowUpResponseHours::closureReason((int) $bot->id, $this->at('2026-11-16 10:00:00')), 'JSON null = ไม่จำกัด');
     }
 
     // ------------------------------------------------------------------
