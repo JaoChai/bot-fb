@@ -151,6 +151,50 @@ class ScanJobTest extends TestCase
         Queue::assertPushed(GenerateCustomerFollowUp::class, 1);
     }
 
+    /** config จริงของบอท 26 (production, อ่านจาก Neon 22 พ.ย. 2026) — จ-ส 08:00-23:00, ไม่มี sun */
+    private static function enableBot26HoursStatic(int $botId): void
+    {
+        DB::table('bot_settings')->where('bot_id', $botId)->update([
+            'response_hours_enabled' => true,
+            'response_hours_timezone' => 'Asia/Bangkok',
+            'response_hours' => json_encode(
+                array_fill_keys(['mon', 'tue', 'wed', 'thu', 'fri', 'sat'], [['start' => '08:00', 'end' => '23:00']]),
+                JSON_UNESCAPED_UNICODE,
+            ),
+        ]);
+    }
+
+    #[Test]
+    public function test_scan_on_closed_day_touches_nothing_for_automatic_mode_and_proceeds_on_the_open_day(): void
+    {
+        $bot = $this->seedOpenBot();
+        // โหมดอัตโนมัติ: host list + อายุเกิน 14 วัน (started_at 17 ต.ค. จาก seedOpenBot)
+        config(['customer_follow_up.automatic_bot_ids' => [$bot->id]]);
+        DB::table('bot_settings')->where('bot_id', $bot->id)->update(['follow_up_mode' => 'automatic']);
+        self::enableBot26HoursStatic((int) $bot->id);
+
+        // อาทิตย์ 22 พ.ย. 2026 10:00 — วันปิด: ไม่มีงานสแกนเลย
+        $this->setClock('2026-11-22 10:00:00');
+        $this->makeSilentPaymentRoom($bot, 'UAUTO', $this->clock());
+        $this->fakeModelApis();
+        Queue::fake();
+        $this->startLogCapture();
+
+        $this->captureQueries();
+        $this->runScan();
+
+        $this->assertScanTouchedNothing('closed day automatic');
+
+        // control: จันทร์ 23 พ.ย. 10:00 เปิด — เดินสแกนปกติ สร้าง candidate แล้วเข้าคิวร่าง
+        $this->setClock('2026-11-23 10:00:00');
+        $this->captureQueries();
+        $this->runScan();
+
+        $rows = DB::table('lead_recovery_logs')->where('bot_id', $bot->id)->where('delivery_status', 'candidate')->get();
+        $this->assertCount(1, $rows, 'วันเปิดต้องกลับมาสร้าง candidate ตามปกติ');
+        Queue::assertPushed(GenerateCustomerFollowUp::class, 1);
+    }
+
     #[Test]
     public function test_open_room_plugin_is_not_a_closed_gate(): void
     {
@@ -270,6 +314,16 @@ class ScanJobTest extends TestCase
                 },
                 'lift' => function (): void {
                     self::setClockStatic('2026-11-16 21:59:59');
+                },
+            ],
+            'bot closed day (response hours sunday)' => [
+                'close' => function () use ($botId): void {
+                    self::setClockStatic('2026-11-22 10:00:00');
+                    self::enableBot26HoursStatic($botId());
+                },
+                'lift' => function (): void {
+                    // จันทร์ 23 พ.ย. 08:00 — วันเปิด (response hours ยังเปิดอยู่)
+                    self::setClockStatic('2026-11-23 08:00:00');
                 },
             ],
             'telegram plugin missing' => [

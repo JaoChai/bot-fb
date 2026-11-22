@@ -412,6 +412,51 @@ class SendTest extends TestCase
     }
 
     // ------------------------------------------------------------------
+    // HR1 — แถว automatic ที่ถึงคิวส่งในวันร้านปิด: ห้ามยิง LINE (ค้าง approved รอรอบหน้า)
+    // ------------------------------------------------------------------
+
+    #[Test]
+    public function test_automatic_approved_send_on_closed_day_pushes_nothing_and_waits_for_the_open_day(): void
+    {
+        $seed = $this->seedAutomaticReady([], ['expires_at' => '2026-11-24 00:00:00']);
+        // เวลาทำการของบอท 26 (จริง, Neon 22 พ.ย. 2026): จ-ส 08:00-23:00 ไม่มีอาทิตย์
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update([
+            'response_hours_enabled' => true,
+            'response_hours_timezone' => 'Asia/Bangkok',
+            'response_hours' => json_encode(
+                array_fill_keys(['mon', 'tue', 'wed', 'thu', 'fri', 'sat'], [['start' => '08:00', 'end' => '23:00']]),
+                JSON_UNESCAPED_UNICODE,
+            ),
+        ]);
+        $this->fakeLine();
+
+        // อาทิตย์ 22 พ.ย. 2026 10:00 — วันปิด: ห้ามยิง LINE แถว automatic คืนเป็นการ์ดเจ้าของ
+        $this->assertSame('blocked', $this->send($seed, '2026-11-22 10:00:00'));
+
+        $this->assertSame(0, $this->hits[self::QUOTA_URL] ?? 0, 'วันปิดห้ามแตะ LINE แม้แต่อ่านโควต้า');
+        $this->assertSame(0, $this->hits[self::PUSH_URL] ?? 0, 'วันปิดห้ามยิง LINE เด็ดขาด');
+        $log = $this->logRow($seed);
+        $this->assertSame('pending', $log->delivery_status, 'วันปิดต้องคืนแถว automatic เป็นการ์ดเจ้าของ ไม่ยิงเงียบๆ');
+        $this->assertSame('auto_eligibility', $log->reason_code, 'กติกา A1 ต้องตัดด้วย auto_eligibility ผ่าน recheck(forSend) เดิม');
+        $this->assertSame('pending', $this->approvalRow($seed)->status);
+        $this->assertFreezeUntouched($seed);
+
+        // control: วันเปิด (จันทร์ 16 พ.ย. 10:00) ข้อมูลชุดเดียวกัน — ยิง LINE จริงได้ปกติ
+        $control = $this->seedAutomaticReady();
+        DB::table('bot_settings')->where('bot_id', $control['bot']->id)->update([
+            'response_hours_enabled' => true,
+            'response_hours_timezone' => 'Asia/Bangkok',
+            'response_hours' => json_encode(
+                array_fill_keys(['mon', 'tue', 'wed', 'thu', 'fri', 'sat'], [['start' => '08:00', 'end' => '23:00']]),
+                JSON_UNESCAPED_UNICODE,
+            ),
+        ]);
+        $this->assertSame('sent', $this->send($control));
+        $this->assertSame(1, $this->hits[self::PUSH_URL] ?? 0, 'วันเปิดต้องยิง LINE จริง');
+        $this->assertSame('sent', $this->logRow($control)->delivery_status);
+    }
+
+    // ------------------------------------------------------------------
     // Step A — อ่านอย่างเดียว: blocked ไม่เขียน ไม่ยิงอะไร
     // ------------------------------------------------------------------
 

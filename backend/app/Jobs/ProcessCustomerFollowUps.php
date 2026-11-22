@@ -11,6 +11,7 @@ use App\Services\FollowUp\FollowUpCapabilities;
 use App\Services\FollowUp\FollowUpEligibility;
 use App\Services\FollowUp\FollowUpPipeline;
 use App\Services\FollowUp\FollowUpReservationService;
+use App\Services\FollowUp\FollowUpResponseHours;
 use App\Services\FollowUp\FollowUpSalesProjector;
 use App\Services\FollowUp\FollowUpTelegramService;
 use Carbon\CarbonImmutable;
@@ -30,7 +31,8 @@ use Throwable;
  * customer_follow_up.bot_ids ตามลำดับ:
  *
  *  Gate (D97) ก่อนเขียนอะไรทั้งสิ้น: บอท active+LINE, bot_settings เปิด
- *  (switch + ข้อความยืนยัน + เวลายืนยัน), อยู่ในชั่วโมงส่ง 08:00-22:00, และ
+ *  (switch + ข้อความยืนยัน + เวลายืนยัน), อยู่ในหน้าต่างส่งของ HR1 (08:00-22:00 กรุงเทพฯ
+ *  ∩ response hours ของบอท — วันปิด/นอกสล็อต = ไม่ทำงาน ทุกโหมด), และ
  *  capabilities ไม่ติด block — บอทที่ปิดไม่มี INSERT/UPDATE/DELETE, ไม่มี
  *  งานเข้าคิว, ไม่มี HTTP, ไม่มี log เหนือ debug (การเติมทั้งบอทจะเขียนแถว
  *  signal ของทุกห้องทุก 15 นาทีถ้าไม่กั้น)
@@ -134,7 +136,7 @@ class ProcessCustomerFollowUps implements ShouldQueue
         $botOpen = (string) $bot->status === 'active'
             && (string) $bot->channel_type === 'line'
             && $this->switchIsOn($botId)
-            && $this->withinSendingHours($now)
+            && FollowUpResponseHours::closureReason($botId, $now) === null
             && (FollowUpCapabilities::forBot($bot, $now)['blocked_reason'] === null);
         $sendJobsQueued = $this->queueSendJobs($botId, $now, $botOpen);
 
@@ -142,7 +144,7 @@ class ProcessCustomerFollowUps implements ShouldQueue
             || (string) $bot->status !== 'active'
             || (string) $bot->channel_type !== 'line'
             || ! $this->switchIsOn($botId)
-            || ! $this->withinSendingHours($now)
+            || FollowUpResponseHours::closureReason($botId, $now) !== null
             || (FollowUpCapabilities::forBot($bot, $now)['blocked_reason'] !== null)
         ) {
             // D104: บอทปิดที่คิวงานส่ง = info line ครั้งเดียว นับเฉพาะงาน step E
@@ -358,19 +360,6 @@ class ProcessCustomerFollowUps implements ShouldQueue
             && (bool) $settings->follow_up_enabled
             && $settings->follow_up_activation_message_id !== null
             && $settings->follow_up_activated_at !== null;
-    }
-
-    /** ชั่วโมงส่ง (กรุงเทพฯ) — ขอบรวม 08:00 ตัด 22:00 เหมือน FollowUpEligibility */
-    private function withinSendingHours(CarbonImmutable $now): bool
-    {
-        $local = $now->tz(FollowUpCapabilities::TIMEZONE);
-        $secondsOfDay = $local->hour * 3600 + $local->minute * 60 + $local->second;
-
-        [$startHour, $startMinute] = array_map(intval(...), explode(':', FollowUpCapabilities::SEND_START));
-        [$endHour, $endMinute] = array_map(intval(...), explode(':', FollowUpCapabilities::SEND_END));
-
-        return $secondsOfDay >= $startHour * 3600 + $startMinute * 60
-            && $secondsOfDay < $endHour * 3600 + $endMinute * 60;
     }
 
     /**
