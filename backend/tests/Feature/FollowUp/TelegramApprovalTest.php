@@ -414,6 +414,19 @@ TEXT;
             'updated_at' => self::NOW,
         ]);
 
+        if ($get('response_hours_closed', false)) {
+            // HR1: เวลาทำการของบอท 26 (จริง, Neon 22 พ.ย. 2026) — จ-ส 08:00-23:00 ไม่มีอาทิตย์
+            // (แท็ป fs ในวันปิดต้องโดนประตูวันปิด ไม่ใช่สถานะอื่น)
+            DB::table('bot_settings')->where('bot_id', $bot->id)->update([
+                'response_hours_enabled' => true,
+                'response_hours_timezone' => 'Asia/Bangkok',
+                'response_hours' => json_encode(
+                    array_fill_keys(['mon', 'tue', 'wed', 'thu', 'fri', 'sat'], [['start' => '08:00', 'end' => '23:00']]),
+                    JSON_UNESCAPED_UNICODE,
+                ),
+            ]);
+        }
+
         $profile = CustomerProfile::factory()->create([
             'channel_type' => 'line',
             'display_name' => $get('display_name', 'สมชาย <ร้าน A&B>'),
@@ -1554,6 +1567,7 @@ TEXT;
             'order created' => ['order', '2026-11-16 10:00:00', 'ลูกค้าสั่งซื้อแล้ว ไม่ต้องตาม', false],
             'passed slip' => ['slip', '2026-11-16 10:00:00', 'ลูกค้าสั่งซื้อแล้ว ไม่ต้องตาม', false],
             'capabilities blocked' => ['capabilities', '2026-11-16 10:00:00', 'บอทนี้ยังตั้งค่าไม่ครบ ยังไม่ได้ส่ง', false],
+            'closed day sunday' => ['closed_sun', '2026-11-22 10:00:00', 'วันนี้ร้านปิด ยังไม่ได้ส่ง กดใหม่เมื่อเปิดทำการ', false],
             'reason without own key' => ['other', '2026-11-15 10:00:00', 'ตอนนี้ยังส่งไม่ได้ ลองใหม่ภายหลัง', false],
         ];
     }
@@ -1567,6 +1581,7 @@ TEXT;
             'handover' => ['is_handover' => true],
             'room' => ['room_status' => 'closed'],
             'capabilities' => ['bot_ids' => []],
+            'closed_sun' => ['response_hours_closed' => true, 'expires_at' => '2026-11-23 00:00:00'],
             default => [],
         };
         $seed = $this->seedWorld($options);
