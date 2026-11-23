@@ -515,9 +515,9 @@ class PromptEvalRunnerTest extends TestCase
         // ล็อกการแก้ config/prompt-eval-cases.php เคส phantom_page_line — ยันจริงบน prod 21 ส.ค.
         // ว่าบอทพิมพ์ "1100" ไม่มีคอมมา เกณฑ์เดิม must_contain: ['1,100'] คงที่เลยตัดสินว่าคำตอบ
         // ที่ถูกต้องทุกอย่างเป็นคำตอบผิด โหลดเคสจริงจาก config (ไม่ hardcode เกณฑ์ซ้ำในเทสต์)
-        // เพื่อกัน config drift ในอนาคตด้วย
-        $realResponse = 'สรุปรายการที่พี่สั่งซื้อครับ: 1. Nolimit Level Up+ BM (ผูกบัตร) (1100 x 1) = 1100 บาท '
-            .'รวมยอดโอน: 1100 บาท ✅ กรุณาโอนเข้าบัญชี 223-3-24880-3 ธนาคารกสิกรไทยครับ';
+        // เพื่อกัน config drift ในอนาคตด้วย (ราคาปรับเป็น 1,600 แล้ว 2026-11-23)
+        $realResponse = 'สรุปรายการที่พี่สั่งซื้อครับ: 1. Nolimit Level Up+ BM (ผูกบัตร) (1600 x 1) = 1600 บาท '
+            .'รวมยอดโอน: 1600 บาท ✅ กรุณาโอนเข้าบัญชี 223-3-24880-3 ธนาคารกสิกรไทยครับ';
 
         $ai = Mockery::mock(AIService::class);
         $ai->shouldReceive('generateResponse')->never();
