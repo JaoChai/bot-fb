@@ -61,6 +61,7 @@ class FollowUpApprovalService
 
     private const ANSWERS_GATE = [
         'outside_hours' => 'ตอนนี้นอกเวลาส่ง ({start}–{end}) ยังไม่ได้ส่ง กดใหม่ในเวลาได้',
+        'day_closed' => 'วันนี้ร้านปิด ยังไม่ได้ส่ง กดใหม่เมื่อเปิดทำการ',
         'bot_switched_off' => 'ระบบตามลูกค้าของบอทนี้ปิดอยู่ ยังไม่ได้ส่ง',
         'capabilities' => 'บอทนี้ยังตั้งค่าไม่ครบ ยังไม่ได้ส่ง',
         'room_not_active' => 'ห้องนี้ปิดไปแล้ว ไม่ได้ส่ง',

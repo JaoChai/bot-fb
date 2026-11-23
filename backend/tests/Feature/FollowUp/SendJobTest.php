@@ -486,6 +486,80 @@ class SendJobTest extends TestCase
         Queue::assertPushed(SendCustomerFollowUp::class, 0);
     }
 
+    /** B2: เรียกบริการแจ้งอัตโนมัติตรง ๆ (ยังไม่มี caller จริง — B3b จะเพิ่ม) */
+    #[Test]
+    public function test_auto_notice_method_contract_is_separate_from_repaint(): void
+    {
+        // (1) แถว synthetic sent/automatic: แจ้งเข้าห้องเตือนเท่านั้น — ไม่แตะ LINE ไม่แตะการ์ด
+        $auto = $this->seedReady([
+            'delivery_status' => 'sent',
+            'owner_action' => 'automatic',
+            'owner_action_at' => '2026-11-16 09:52:00',
+            'owner_telegram_user_id' => null,
+            'message_sent' => self::TEXT,
+            'sent_at' => '2026-11-16 09:52:00',
+            'first_push_at' => '2026-11-16 09:52:00',
+            'attempt_number' => 1,
+            'updated_at' => '2026-11-16 09:52:00',
+            // แถว automatic จริงต้องมีกลุ่ม+ความมั่นใจ (กฎ A1) — ขาด = notice ต้อง blocked
+            'group_code' => 'G3',
+            'group_confidence' => 0.86,
+        ], [
+            'status' => 'sent',
+            'telegram_delivery_state' => 'new',
+            'telegram_chat_id' => null,
+            'telegram_message_id' => null,
+        ]);
+        // log.message_id อ้าง FK messages — สร้างข้อความบอทที่ LINE ยอมรับแล้วจริง
+        $autoMessageId = $this->addMessage($auto['room']->id, 'bot', '2026-11-16 09:52:00', self::TEXT);
+        DB::table('lead_recovery_logs')->where('id', $auto['logId'])->update(['message_id' => $autoMessageId]);
+        $autoLogBefore = (array) $this->logRow($auto);
+        $this->fakeHttp();
+
+        $noticeResult = app(FollowUpTelegramService::class)->publishAutomaticNotice($auto['approvalId'], $this->now());
+
+        $this->assertSame('sent', $noticeResult);
+        $this->assertSame(0, $this->hits[self::LINE_PUSH_URL] ?? 0, 'การแจ้งห้ามยิง push LINE');
+        $this->assertArrayNotHasKey(self::LINE_QUOTA_URL, $this->hits, 'การแจ้งไม่ใช่งาน LINE — ไม่ตรวจโควตา');
+        $this->assertArrayNotHasKey(self::LINE_CONSUMPTION_URL, $this->hits);
+        $noticeRequests = $this->telegramRequests();
+        $this->assertCount(1, $noticeRequests, 'ยิง Telegram ครั้งเดียว ไม่มี editMessageText');
+        $this->assertSame('sendMessage', $this->methodOf($noticeRequests[0]));
+        $this->assertSame(self::PLUGIN_CHAT, $noticeRequests[0]['chat_id'], 'ปลายทางคือ chat ของ plugin เท่านั้น');
+        $markup = json_decode((string) ($noticeRequests[0]['reply_markup'] ?? ''), true);
+        $this->assertTrue($markup === null || array_filter($markup['inline_keyboard'] ?? []) === [], 'ข้อความแจ้งไม่มีปุ่ม');
+        $this->assertSame($autoLogBefore, (array) $this->logRow($auto), 'ฝั่ง LINE บน log คงเดิมทุกไบต์');
+        $this->assertSame('sent', DB::table('follow_up_approvals')->where('id', $auto['approvalId'])->value('telegram_delivery_state'));
+
+        // (2) แถวเจ้านายกดเอง (approve mode): repaint ยังเท่าเดิมทุกไบต์
+        $human = $this->seedReady([
+            'delivery_status' => 'sent',
+            'sent_at' => '2026-11-16 09:52:00',
+            'message_sent' => self::TEXT,
+            'first_push_at' => '2026-11-16 09:52:00',
+        ], ['status' => 'sent']);
+        $human['bot']->update(['name' => 'Line - Adsvance']);
+        $humanBot = $human['bot']->refresh();
+        app(FollowUpTelegramService::class)->refreshCard($human['approvalId'], $this->now());
+
+        $humanLog = $this->logRow($human);
+        $cardText = "🔔 <b>ตามลูกค้าที่เงียบไป</b> · #{$humanLog->id}\n"
+            ."บอท: {$humanBot->name}\n"
+            .'ลูกค้า #'.$human['room']->id."\n"
+            ."กลุ่ม: ไม่ระบุ\n"
+            ."ลูกค้าพิมพ์ล่าสุด: -\n"
+            ."บอทตอบล่าสุด: -\n"
+            ."\n"
+            ."<b>ร่างข้อความ</b>\n"
+            .self::TEXT."\n"
+            ."\n"
+            ."ตรวจข้อความ: ✅ ผ่าน\n"
+            ."หมดอายุ: 16/11 12:00 (12 ชั่วโมง)\n"
+            .'เปิดห้อง: https://admin.example.test/chat?botId='.$humanBot->id.'&amp;conversationId='.$human['room']->id;
+        $this->assertCount(1, $this->editTexts(), 'การแจ้งเป็น sendMessage — ไม่โผล่ใน editTexts');
+        $this->assertSame($cardText."\n\n".'✅ ส่งให้ลูกค้าแล้ว', $this->editTexts()[0], 'repaint ของแถวอนุมัติโดยคนต้องเท่าเดิมทุกไบต์');
+    }
+
     #[Test]
     public function test_contract_tries_timeout_default_queue_and_payload(): void
     {

@@ -929,4 +929,57 @@ class EligibilityTest extends TestCase
         DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update(['follow_up_enabled' => false]);
         $this->assertSame('bot_switched_off', FollowUpEligibility::recheck($log, $this->now(), true));
     }
+
+    // ------------------------------------------------------------------
+    // HR1 — เวลาทำการของบอท (response hours) ผ่านประตูเดียวกัน
+    // ------------------------------------------------------------------
+
+    /** config จริงของบอท 26 (production, อ่านจาก Neon 22 พ.ย. 2026) — จ-ส 08:00-23:00, ไม่มี sun */
+    private function enableBot26Hours(int $botId): void
+    {
+        DB::table('bot_settings')->where('bot_id', $botId)->update([
+            'response_hours_enabled' => true,
+            'response_hours_timezone' => 'Asia/Bangkok',
+            'response_hours' => json_encode(
+                array_fill_keys(['mon', 'tue', 'wed', 'thu', 'fri', 'sat'], [['start' => '08:00', 'end' => '23:00']]),
+                JSON_UNESCAPED_UNICODE,
+            ),
+        ]);
+    }
+
+    #[Test]
+    public function test_query_is_constant_false_on_the_bot_closed_day_and_open_on_the_working_day(): void
+    {
+        $seed = $this->seedBase();
+        $this->enableBot26Hours((int) $seed['bot']->id);
+
+        // อาทิตย์ 22 พ.ย. 2026 10:00 — วันปิด: ไม่มีห้องผ่านแม้ทุกเงื่อนไขห้องครบ
+        // (refresh projection ด้วยนาฬิกาวันอาทิตย์ก่อน กันผลลัพธ์ 0 ที่มาจาก projection เก่า ไม่ใช่วันปิด)
+        $sunday = $this->at('2026-11-22 10:00:00');
+        FollowUpSalesProjector::refresh($seed['room'], $sunday);
+        $this->assertSame(0, $this->eligibleCount($seed['bot'], $sunday), 'วันปิดต้องไม่มีห้องผ่านแม้ projection สด');
+
+        // control: จันทร์ 16 พ.ย. 10:00 เปิด — ห้องเดิมผ่านตามเดิม
+        $this->assertSame(1, $this->eligibleCount($seed['bot'], $this->now()));
+    }
+
+    #[Test]
+    public function test_recheck_returns_day_closed_on_a_closed_day_and_outside_hours_outside_the_bot_slot(): void
+    {
+        $seed = $this->seedBase();
+        $this->enableBot26Hours((int) $seed['bot']->id);
+        $log = LeadRecoveryLog::query()->findOrFail($this->addLog($seed['room'], $seed['anchorId'], $seed['anchorId'], 'candidate'));
+
+        // อาทิตย์ — วันปิด = reason ใหม่ day_closed ต่างหากจาก outside_hours เดิม
+        $this->assertSame('day_closed', FollowUpEligibility::recheck($log, $this->at('2026-11-22 10:00:00')));
+
+        // สล็อตของบอทเอง จันทร์ 09:00-12:00 — 08:30 อยู่ในหน้าต่างคงที่แต่นอกสล็อต = outside_hours เดิม
+        DB::table('bot_settings')->where('bot_id', $seed['bot']->id)->update([
+            'response_hours' => json_encode(['mon' => [['start' => '09:00', 'end' => '12:00']]], JSON_UNESCAPED_UNICODE),
+        ]);
+        $this->assertSame('outside_hours', FollowUpEligibility::recheck($log, $this->at('2026-11-16 08:30:00')));
+
+        // control: จันทร์ 10:00 อยู่ในสล็อต — ห้องยังผ่านทุกอย่าง
+        $this->assertNull(FollowUpEligibility::recheck($log, $this->now()));
+    }
 }

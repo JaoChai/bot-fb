@@ -5,6 +5,7 @@ namespace App\Services\FollowUp;
 use App\Models\Bot;
 use App\Models\FlowPlugin;
 use App\Models\FollowUpApproval;
+use App\Models\LeadRecoveryLog;
 use App\Services\Payment\TelegramAlertBotService;
 use App\Support\FollowUpRedactor;
 use Carbon\CarbonImmutable;
@@ -113,6 +114,21 @@ class FollowUpTelegramService
             ['fe', 'แก้ข้อความ'],
         ],
     ];
+
+    /**
+     * ข้อความแจ้งเจ้านายหลังส่งข้อความตามลูกค้าเอง (A5 / การ์ด B2) — คำตายตามการ์ด ห้ามปุ่ม ห้ามแก้ลอยๆ
+     * บรรทัดกลุ่ม/ลูกค้า/URL ยืมคำและกฎจาก STRINGS ข้างบน (label กลุ่ม, ชื่อลูกค้าผ่าน redactor, fallback ห้อง)
+     */
+    private const AUTOMATIC_NOTICE_STRINGS = [
+        'title' => 'ส่งข้อความตามลูกค้าอัตโนมัติแล้ว',
+        'customer_line' => 'ลูกค้า: {customer}',
+        'group_line' => 'กลุ่ม: {group_label} · มั่นใจ {percent}%',
+        'sent_heading' => 'ข้อความที่ส่ง:',
+        'room_line' => 'เปิดห้อง: {url}',
+    ];
+
+    /** ข้อความแจ้งอัตโนมัติ: ชื่อ log line ต่อการ publish หนึ่งครั้ง */
+    private const NOTICE_LOG_MESSAGE = 'Follow-up automatic notice';
 
     public function __construct(private readonly TelegramAlertBotService $telegram) {}
 
@@ -229,6 +245,180 @@ class FollowUpTelegramService
     }
 
     /**
+     * ข้อความแจ้งเจ้านายในห้องเตือนหลังส่งข้อความตามลูกค้า "เอง" (A5 / การ์ด B2)
+     *
+     * เครื่องจักรสถานะเดียวกับ publish: claim new -> sending ด้วย UPDATE มีเงื่อนไขครั้งเดียว,
+     * final write ครั้งเดียวจบ — แถว sending ค้างเกิน 120 วิ = unknown และห้ามยิงซ้ำ
+     * (คำขอ Telegram รวมทั้งชีวิตของ approval มีได้ครั้งเดียว)
+     *
+     * แจ้งได้เมื่อ log และ approval เป็น sent/sent, owner_action = automatic
+     * และ LINE ยืนยันแล้ว (log.message_id มีจริง) เท่านั้น — เงื่อนไขขาดอย่างใดอย่างหนึ่ง = blocked
+     * ปลายทาง: plugin แจ้งเตือนปัจจุบันของบอท (FollowUpCapabilities::alertPlugin) กับ chat id
+     * ที่ config ไว้เท่านั้น ห้ามใช้ chat id ที่ติดมากับแถว — ไม่ตรง = blocked
+     * ผลลัพธ์ของการแจ้ง (failed/unknown) ไม่มีวันเปลี่ยนผลการส่ง LINE และไม่มี retry
+     * ผลลัพธ์: sent | already_sent | failed | unknown | busy | blocked
+     */
+    public function publishAutomaticNotice(int $approvalId, ?CarbonImmutable $now = null): string
+    {
+        $now = ($now ?? CarbonImmutable::now(FollowUpCapabilities::TIMEZONE))
+            ->tz(FollowUpCapabilities::TIMEZONE)
+            ->startOfSecond();
+        $nowStr = $now->format('Y-m-d H:i:s');
+
+        $approval = DB::table('follow_up_approvals')->where('id', $approvalId)->first();
+        if ($approval === null) {
+            return $this->finish($approvalId, null, null, 'blocked', 'missing_approval', null, self::NOTICE_LOG_MESSAGE);
+        }
+
+        $log = DB::table('lead_recovery_logs')->where('id', $approval->lead_recovery_log_id)->first();
+        if ($log === null) {
+            return $this->finish($approvalId, (int) $approval->lead_recovery_log_id, null, 'blocked', 'missing_log', null, self::NOTICE_LOG_MESSAGE);
+        }
+
+        $logId = (int) $log->id;
+        $botId = (int) $log->bot_id;
+
+        // ตรวจขอบเขตก่อนเครื่องจักรสถานะ — แถวที่ไม่ใช่ automatic ต้อง blocked เสมอ
+        // ไม่ว่า telegram_delivery_state จะเป็นอะไร (แถวมนุษย์กดเองมี state sent ของ "การ์ด")
+        if ((string) $approval->status !== FollowUpApproval::STATUS_SENT) {
+            return $this->finish($approvalId, $logId, $botId, 'blocked', 'approval_status', null, self::NOTICE_LOG_MESSAGE);
+        }
+
+        if ((string) $log->delivery_status !== 'sent') {
+            return $this->finish($approvalId, $logId, $botId, 'blocked', 'log_status', null, self::NOTICE_LOG_MESSAGE);
+        }
+
+        if ((string) ($log->owner_action ?? '') !== LeadRecoveryLog::OWNER_ACTION_AUTOMATIC) {
+            return $this->finish($approvalId, $logId, $botId, 'blocked', 'owner_action', null, self::NOTICE_LOG_MESSAGE);
+        }
+
+        if ($log->message_id === null) {
+            // ยังไม่มีหลักฐานว่า LINE ยอมรับและบันทึกข้อความ — ห้ามแจ้งว่าส่งแล้ว
+            return $this->finish($approvalId, $logId, $botId, 'blocked', 'line_message_missing', null, self::NOTICE_LOG_MESSAGE);
+        }
+
+        if ($log->group_confidence === null) {
+            // แถว automatic ต้องมีค่าความมั่นใจเสมอ (กฎ A1) — ขาด = ข้อมูลเสีย ห้ามแต่งตัวเลขแทน
+            return $this->finish($approvalId, $logId, $botId, 'blocked', 'group_confidence_missing', null, self::NOTICE_LOG_MESSAGE);
+        }
+
+        $state = (string) $approval->telegram_delivery_state;
+        if ($state !== FollowUpApproval::TELEGRAM_STATE_NEW) {
+            return $this->answerForNonNewState($approvalId, $logId, $botId, $approval, $state, $now, $nowStr, self::NOTICE_LOG_MESSAGE);
+        }
+
+        $bot = Bot::query()->find($botId);
+        if ($bot === null) {
+            return $this->finish($approvalId, $logId, $botId, 'blocked', 'bot_missing', null, self::NOTICE_LOG_MESSAGE);
+        }
+
+        $plugin = FollowUpCapabilities::alertPlugin($bot);
+        if ($plugin === null) {
+            return $this->finish($approvalId, $logId, $botId, 'blocked', 'telegram_missing', null, self::NOTICE_LOG_MESSAGE);
+        }
+        $chatId = (string) ($plugin->config['chat_id'] ?? '');
+
+        // ห้ามยิงตามค่าที่ติดมากับแถว — ข้อมูลเก่า/ปลอมต้องปิด ไม่ปัดเศษตาม
+        if ($approval->telegram_plugin_id !== null && (int) $approval->telegram_plugin_id !== (int) $plugin->id) {
+            return $this->finish($approvalId, $logId, $botId, 'blocked', 'telegram_plugin_mismatch', null, self::NOTICE_LOG_MESSAGE);
+        }
+        if ($approval->telegram_chat_id !== null && (string) $approval->telegram_chat_id !== $chatId) {
+            return $this->finish($approvalId, $logId, $botId, 'blocked', 'telegram_chat_mismatch', null, self::NOTICE_LOG_MESSAGE);
+        }
+
+        $claimed = DB::table('follow_up_approvals')
+            ->where('id', $approvalId)
+            ->where('telegram_delivery_state', FollowUpApproval::TELEGRAM_STATE_NEW)
+            ->where('status', FollowUpApproval::STATUS_SENT)
+            ->update([
+                'telegram_delivery_state' => FollowUpApproval::TELEGRAM_STATE_SENDING,
+                'telegram_plugin_id' => $plugin->id,
+                'telegram_chat_id' => $chatId,
+                'updated_at' => $nowStr,
+            ]) === 1;
+        if (! $claimed) {
+            return $this->finish($approvalId, $logId, $botId, 'busy', 'telegram_claim_refused', null, self::NOTICE_LOG_MESSAGE);
+        }
+
+        $html = $this->renderAutomaticNotice($log, $bot);
+        $outcome = $this->telegram->sendFollowUpCard(
+            (string) ($plugin->config['access_token'] ?? ''),
+            $chatId,
+            $html,
+            // ไม่มีปุ่ม — transport ปฏิเสธ array ว่างเปล่า จึงใช้แถวว่างหนึ่งแถว (inline_keyboard ไร้ปุ่ม)
+            [[]],
+        );
+
+        $newState = match ($outcome['outcome']) {
+            'accepted' => FollowUpApproval::TELEGRAM_STATE_SENT,
+            'rejected' => FollowUpApproval::TELEGRAM_STATE_FAILED,
+            default => FollowUpApproval::TELEGRAM_STATE_UNKNOWN,
+        };
+
+        $updates = [
+            'telegram_delivery_state' => $newState,
+            'updated_at' => $nowStr,
+        ];
+        if ($newState === FollowUpApproval::TELEGRAM_STATE_SENT) {
+            $updates['telegram_message_id'] = $outcome['message_id'];
+        }
+
+        $written = DB::table('follow_up_approvals')
+            ->where('id', $approvalId)
+            ->where('telegram_delivery_state', FollowUpApproval::TELEGRAM_STATE_SENDING)
+            ->update($updates) === 1;
+        if (! $written) {
+            return $this->finish($approvalId, $logId, $botId, 'blocked', 'claim_lost', null, self::NOTICE_LOG_MESSAGE);
+        }
+
+        $result = match ($newState) {
+            FollowUpApproval::TELEGRAM_STATE_SENT => 'sent',
+            FollowUpApproval::TELEGRAM_STATE_FAILED => 'failed',
+            default => 'unknown',
+        };
+
+        return $this->finish($approvalId, $logId, $botId, $result, null, $outcome['status'], self::NOTICE_LOG_MESSAGE);
+    }
+
+    /** แถวนี้เป็นข้อความแจ้ง "ส่งเอง" ที่ยืนยันแล้ว — การ์ดไม่มีสิทธิ์วาดทับ */
+    private function isSentAutomaticNotice(object $approval, object $log): bool
+    {
+        return (string) $approval->status === FollowUpApproval::STATUS_SENT
+            && (string) $log->delivery_status === 'sent'
+            && (string) ($log->owner_action ?? '') === LeadRecoveryLog::OWNER_ACTION_AUTOMATIC;
+    }
+
+    /**
+     * ประกอบข้อความแจ้ง (B2) — คำตายตาม AUTOMATIC_NOTICE_STRINGS, dynamic ทุกตัว escape
+     * ข้อความที่ส่งเอาทั้งฉบับตามที่ freeze ไว้ ไม่ตัด ไม่มี preview ลูกค้า
+     */
+    private function renderAutomaticNotice(object $log, Bot $bot): string
+    {
+        $s = self::AUTOMATIC_NOTICE_STRINGS;
+        $customer = $this->customerValue($log);
+        $label = self::STRINGS['group_labels'][(string) $log->group_code] ?? self::STRINGS['group_label_other'];
+        $percent = intdiv((int) round((float) $log->group_confidence * 10000), 100);
+        $roomUrl = rtrim((string) config('customer_follow_up.admin_web_url'), '/')
+            .'/chat?botId='.$bot->id.'&conversationId='.$log->conversation_id;
+
+        $lines = [];
+        $lines[] = $s['title'];
+        $lines[] = $customer === null
+            ? str_replace('{conversation_id}', TelegramAlertBotService::esc((string) $log->conversation_id), self::STRINGS['customer_fallback'])
+            : str_replace('{customer}', TelegramAlertBotService::esc($customer), $s['customer_line']);
+        $lines[] = str_replace(
+            ['{group_label}', '{percent}'],
+            [TelegramAlertBotService::esc($label), TelegramAlertBotService::esc((string) $percent)],
+            $s['group_line'],
+        );
+        $lines[] = $s['sent_heading'];
+        $lines[] = TelegramAlertBotService::esc((string) $log->message_sent);
+        $lines[] = str_replace('{url}', TelegramAlertBotService::esc($roomUrl), $s['room_line']);
+
+        return implode("\n", $lines);
+    }
+
+    /**
      * เขียนการ์ดใหม่ด้วยบรรทัดสถานะ (B6b) — ตามสถานะปลายทางที่ผู้ส่งเขียนไว้แล้ว
      * เขียนฐานข้อมูลไม่ลงเลย (อ่านอย่างเดียว) ยิง editMessageText หนึ่งครั้งเมื่อต้องแก้
      * คืน refreshed|failed|unknown|unchanged|blocked
@@ -240,6 +430,11 @@ class FollowUpTelegramService
             return 'blocked';
         }
         [$approval, $log, $bot, , $token] = $target;
+
+        // ข้อความแจ้งอัตโนมัติ (B2) ไม่ใช่การ์ดเจ้านาย — ห้ามวาดทับเป็นการ์ด ห้ามแตะปุ่ม
+        if ($this->isSentAutomaticNotice($approval, $log)) {
+            return 'unchanged';
+        }
 
         $status = (string) $approval->status;
         if ($status === FollowUpApproval::STATUS_PENDING || $status === FollowUpApproval::STATUS_EDITING) {
@@ -370,19 +565,19 @@ class FollowUpTelegramService
     }
 
     /** ตอบจาก telegram_delivery_state ที่ไม่ใช่ new — ไม่ยิง HTTP ยกเว้น claim sending ตาย 120 วิ */
-    private function answerForNonNewState(int $approvalId, int $logId, int $botId, object $approval, string $state, CarbonImmutable $now, string $nowStr): string
+    private function answerForNonNewState(int $approvalId, int $logId, int $botId, object $approval, string $state, CarbonImmutable $now, string $nowStr, string $logMessage = 'Follow-up card publish'): string
     {
         switch ($state) {
             case FollowUpApproval::TELEGRAM_STATE_SENT:
-                return $this->finish($approvalId, $logId, $botId, 'already_sent', null, null);
+                return $this->finish($approvalId, $logId, $botId, 'already_sent', null, null, $logMessage);
             case FollowUpApproval::TELEGRAM_STATE_FAILED:
-                return $this->finish($approvalId, $logId, $botId, 'failed', null, null);
+                return $this->finish($approvalId, $logId, $botId, 'failed', null, null, $logMessage);
             case FollowUpApproval::TELEGRAM_STATE_UNKNOWN:
-                return $this->finish($approvalId, $logId, $botId, 'unknown', null, null);
+                return $this->finish($approvalId, $logId, $botId, 'unknown', null, null, $logMessage);
             case FollowUpApproval::TELEGRAM_STATE_SENDING:
                 $staleCutoff = $now->subSeconds(self::CLAIM_STALE_SECONDS)->format('Y-m-d H:i:s');
                 if ((string) $approval->updated_at > $staleCutoff) {
-                    return $this->finish($approvalId, $logId, $botId, 'busy', 'telegram_claim_active', null);
+                    return $this->finish($approvalId, $logId, $botId, 'busy', 'telegram_claim_active', null, $logMessage);
                 }
 
                 // claim ตาย — ทำเครื่องหมาย unknown ด้วย UPDATE มีเงื่อนไขหนึ่งครั้ง
@@ -395,17 +590,17 @@ class FollowUpTelegramService
                         'updated_at' => $nowStr,
                     ]);
 
-                return $this->finish($approvalId, $logId, $botId, 'unknown', 'telegram_claim_stale', null);
+                return $this->finish($approvalId, $logId, $botId, 'unknown', 'telegram_claim_stale', null, $logMessage);
             default:
                 // ค่านอกชุดคงที่ของโมเดล = ข้อมูลเสีย — ปิดทางส่งกันพลาด
-                return $this->finish($approvalId, $logId, $botId, 'blocked', 'telegram_state_unexpected', null);
+                return $this->finish($approvalId, $logId, $botId, 'blocked', 'telegram_state_unexpected', null, $logMessage);
         }
     }
 
     /** log บรรทัดเดียวต่อการ publish แล้วคืนผลลัพธ์ */
-    private function finish(int $approvalId, ?int $logId, ?int $botId, string $result, ?string $reason, ?int $httpStatus): string
+    private function finish(int $approvalId, ?int $logId, ?int $botId, string $result, ?string $reason, ?int $httpStatus, string $message = 'Follow-up card publish'): string
     {
-        Log::info('Follow-up card publish', [
+        Log::info($message, [
             'approval_id' => $approvalId,
             'log_id' => $logId,
             'bot_id' => $botId,

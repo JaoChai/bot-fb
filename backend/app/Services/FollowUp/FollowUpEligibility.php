@@ -29,7 +29,8 @@ use Illuminate\Support\Facades\DB;
  *  153 ลูกค้าเดียวกัน 7 วัน      → NOT EXISTS log sent เกินหน้าต่าง 7 วัน หรือ sending/retry ที่มี first_push_at
  *  154 แบ็คล็อกตอนเปิด 1-7 วัน   → anchor เก่ากว่า high-water ต้องอยู่ใน [activated-7d, activated-1d] + ไม่มีข้อความหลัง high-water
  *  155 งบร่างรายวัน             → (SELECT COUNT วันนี้กรุงเทพฯ) < 10 (ownLogId ยกเว้นตอน recheck)
- *  156 ชั่วโมงส่ง                → PHP gate 08:00-22:00 → constant-false นอกเวลา
+ * 156 ชั่วโมงส่ง                → PHP gate HR1: หน้าต่างคงที่ 08:00-22:00 ∩ response hours ของบอท
+ *                                  (FollowUpResponseHours::closureReason) → constant-false นอกเวลา/วันปิด
  *  157 ไม่มี account data        → sensitive_account_data = false
  */
 class FollowUpEligibility
@@ -65,8 +66,8 @@ class FollowUpEligibility
             ->where('conversations.channel_type', 'line')
             ->where('conversations.external_customer_id', '!=', '');
 
-        // 156 + capabilities: นอกเวลา/ติด block = constant-false (ยังเป็น SQL เดียวกัน)
-        if (! self::withinSendingHours($now)
+        // 156 + HR1 + capabilities: วันปิด / นอกหน้าต่างส่ง (คงที่ ∩ response hours) / ติด block = constant-false (ยังเป็น SQL เดียวกัน)
+        if (FollowUpResponseHours::closureReason((int) $bot->id, $now) !== null
             || FollowUpCapabilities::forBot($bot, $now)['blocked_reason'] !== null) {
             return $builder->whereRaw('1 = 0');
         }
@@ -222,8 +223,10 @@ class FollowUpEligibility
     {
         $now = $now->tz(FollowUpCapabilities::TIMEZONE)->startOfSecond();
 
-        if (! self::withinSendingHours($now)) {
-            return 'outside_hours';
+        // HR1: วันปิดของบอท หรือนอกหน้าต่างส่ง (คงที่ ∩ response hours) = ตัดก่อนอ่านอย่างอื่น
+        $closure = FollowUpResponseHours::closureReason((int) $log->bot_id, $now);
+        if ($closure !== null) {
+            return $closure;
         }
 
         $conversation = $log->conversation()->first();
@@ -284,24 +287,6 @@ class FollowUpEligibility
     // ------------------------------------------------------------------
     // helpers
     // ------------------------------------------------------------------
-
-    /** 08:00:00 ≤ เวลากรุงเทพฯ < 22:00:00 */
-    private static function withinSendingHours(CarbonImmutable $now): bool
-    {
-        $local = $now->tz(FollowUpCapabilities::TIMEZONE);
-        $start = self::hourMinuteToSeconds(FollowUpCapabilities::SEND_START);
-        $end = self::hourMinuteToSeconds(FollowUpCapabilities::SEND_END);
-        $seconds = $local->hour * 3600 + $local->minute * 60 + $local->second;
-
-        return $seconds >= $start && $seconds < $end;
-    }
-
-    private static function hourMinuteToSeconds(string $hourMinute): int
-    {
-        [$hour, $minute] = array_map(intval(...), explode(':', $hourMinute));
-
-        return $hour * 3600 + $minute * 60;
-    }
 
     private static function orderExistsSince(int $botId, Conversation $conversation, ?string $since): bool
     {

@@ -6,10 +6,12 @@ use App\Models\Bot;
 use App\Models\Conversation;
 use App\Models\FollowUpApproval;
 use App\Models\LeadRecoveryLog;
+use App\Services\FollowUp\FollowUpAutomaticRule;
 use App\Services\FollowUp\FollowUpCapabilities;
 use App\Services\FollowUp\FollowUpEligibility;
 use App\Services\FollowUp\FollowUpPipeline;
 use App\Services\FollowUp\FollowUpReservationService;
+use App\Services\FollowUp\FollowUpResponseHours;
 use App\Services\FollowUp\FollowUpSalesProjector;
 use App\Services\FollowUp\FollowUpTelegramService;
 use Carbon\CarbonImmutable;
@@ -29,7 +31,8 @@ use Throwable;
  * customer_follow_up.bot_ids ตามลำดับ:
  *
  *  Gate (D97) ก่อนเขียนอะไรทั้งสิ้น: บอท active+LINE, bot_settings เปิด
- *  (switch + ข้อความยืนยัน + เวลายืนยัน), อยู่ในชั่วโมงส่ง 08:00-22:00, และ
+ *  (switch + ข้อความยืนยัน + เวลายืนยัน), อยู่ในหน้าต่างส่งของ HR1 (08:00-22:00 กรุงเทพฯ
+ *  ∩ response hours ของบอท — วันปิด/นอกสล็อต = ไม่ทำงาน ทุกโหมด), และ
  *  capabilities ไม่ติด block — บอทที่ปิดไม่มี INSERT/UPDATE/DELETE, ไม่มี
  *  งานเข้าคิว, ไม่มี HTTP, ไม่มี log เหนือ debug (การเติมทั้งบอทจะเขียนแถว
  *  signal ของทุกห้องทุก 15 นาทีถ้าไม่กั้น)
@@ -82,6 +85,31 @@ class ProcessCustomerFollowUps implements ShouldQueue
     /** approved ที่ค้างไม่น้อยกว่านี้ถึงเก็บ — แท็ปมีงานของตัวเองแล้ว (นาที) */
     private const SEND_APPROVED_MIN_AGE = 2;
 
+    /** แจ้งอัตโนมัติค้างสูงสุดต่อบอทต่อสแกน — step E2 (B3b) */
+    private const MAX_AUTO_NOTICES = 5;
+
+    /** การ์ดคืนจาก automatic สูงสุดต่อบอทต่อสแกน — step E3 (B3b) */
+    private const MAX_AUTO_FALLBACK_CARDS = 5;
+
+    /** claim แจ้งที่ค้างไม่น้อยกว่านี้ถือว่า worker ตาย — ตัวเลขเดียวกับเครื่องจักรการ์ด (วินาที) */
+    private const NOTICE_STALE_SECONDS = 120;
+
+    /**
+     * reason_code ที่ revert ของตัวส่ง (B3a) เขียนทิ้งไว้เวลาคืนแถว automatic เป็นการ์ด —
+     * ร่องรอยเดียวที่เหลือหลังล้าง owner_action ใช้แยกการ์ดคืนจากการ์ดของมนุษย์
+     */
+    private const AUTO_FALLBACK_REASONS = [
+        FollowUpAutomaticRule::AUTO_SWITCH_OFF,
+        FollowUpAutomaticRule::AUTO_MODE_APPROVE,
+        FollowUpAutomaticRule::AUTO_NOT_ALLOWED,
+        FollowUpAutomaticRule::AUTO_GROUP,
+        FollowUpAutomaticRule::AUTO_CONFIDENCE,
+        FollowUpAutomaticRule::AUTO_DECLINED,
+        FollowUpAutomaticRule::AUTO_CHECK,
+        FollowUpAutomaticRule::AUTO_REVISION,
+        FollowUpAutomaticRule::AUTO_ELIGIBILITY,
+    ];
+
     public function handle(FollowUpReservationService $reservations, FollowUpTelegramService $telegram): void
     {
         // นาฬิกาครั้งเดียวต่อการทำงาน — ทุกขั้นใช้วินาทีนี้ตลอด (การ์ด B6d)
@@ -102,12 +130,13 @@ class ProcessCustomerFollowUps implements ShouldQueue
 
         // ---- E. เก็บงานส่งค้างก่อน gate (D104): แถวที่ยิงแล้วต้องถึงจุดจบแม้
         // บอทปิดอยู่ — (r) ถึงคิว และ (s) ค้าง 10 นาที คิวเสมอ, (a) อนุมัติค้าง
-        // 2 นาที เมื่อบอทเปิดเท่านั้น (gate เดียวกับ A-D) ----
+        // 2 นาที เมื่อบอทเปิดเท่านั้น (gate เดียวกับ A-D), (a2) อนุมัติค้างของ
+        // automatic คิวเสมอ — สวิตช์ปิดห้ามทิ้งแถวค้าง (B3b) ----
         $scanStartedAt = microtime(true);
         $botOpen = (string) $bot->status === 'active'
             && (string) $bot->channel_type === 'line'
             && $this->switchIsOn($botId)
-            && $this->withinSendingHours($now)
+            && FollowUpResponseHours::closureReason($botId, $now) === null
             && (FollowUpCapabilities::forBot($bot, $now)['blocked_reason'] === null);
         $sendJobsQueued = $this->queueSendJobs($botId, $now, $botOpen);
 
@@ -115,7 +144,7 @@ class ProcessCustomerFollowUps implements ShouldQueue
             || (string) $bot->status !== 'active'
             || (string) $bot->channel_type !== 'line'
             || ! $this->switchIsOn($botId)
-            || ! $this->withinSendingHours($now)
+            || FollowUpResponseHours::closureReason($botId, $now) !== null
             || (FollowUpCapabilities::forBot($bot, $now)['blocked_reason'] !== null)
         ) {
             // D104: บอทปิดที่คิวงานส่ง = info line ครั้งเดียว นับเฉพาะงาน step E
@@ -187,8 +216,11 @@ class ProcessCustomerFollowUps implements ShouldQueue
     }
 
     /**
-     * E. งานส่งค้างของบอท (D104) — SELECT แล้วคิว SendCustomerFollowUp เท่านั้น
-     * เขียนอะไรลงตารางไม่ลง ยิง HTTP ไม่มี คิว id น้อยไปมากไม่เกิน 20 ต่อบอทต่อสแกน
+     * E. งานส่งค้างของบอท (D104) + งานรอบแถว automatic (B3b) — SELECT แล้วคิว
+     * SendCustomerFollowUp เท่านั้น เขียนอะไรลงตารางไม่ลง ยิง HTTP ไม่มี
+     * คิว id น้อยไปมาก: (r)/(s)/(a) ไม่เกิน 20 ต่อบอท, (a2) อนุมัติ automatic
+     * คิวเสมอแม้สวิตช์ปิด, (E2) แจ้งอัตโนมัติค้างไม่เกิน 5, (E3) การ์ดคืนจาก
+     * automatic ไม่เกิน 5 เมื่อยังมี plugin แจ้งเตือน — ทั้งหมดนับในค่าเดียวกัน
      *
      * @return int จำนวนงานที่คิวรอบนี้
      */
@@ -223,9 +255,91 @@ class ProcessCustomerFollowUps implements ShouldQueue
                             ->where('l.updated_at', '<=', $approvedCutoff);
                     });
                 }
+                // (a2) อนุมัติค้างของ automatic — คิวเสมอแม้สวิตช์ปิด (B3b):
+                // kill switch ห้ามทิ้งแถว ตัวส่งเป็นคนตัดสินคืนการ์ดหรือบล็อกเอง
+                $query->orWhere(function ($autoApproved) use ($approvedCutoff): void {
+                    $autoApproved->where('l.delivery_status', LeadRecoveryLog::DELIVERY_STATUS_APPROVED)
+                        ->where('a.status', FollowUpApproval::STATUS_APPROVED)
+                        ->where('l.owner_action', LeadRecoveryLog::OWNER_ACTION_AUTOMATIC)
+                        ->where('l.updated_at', '<=', $approvedCutoff);
+                });
             })
             ->orderBy('a.id')
             ->limit(self::MAX_SEND_JOBS)
+            ->pluck('a.id');
+
+        foreach ($ids as $id) {
+            SendCustomerFollowUp::dispatch((int) $id);
+        }
+
+        return count($ids)
+            + $this->queueAutoNotices($botId, $now)
+            + $this->queueAutoFallbackCards($botId, $now);
+    }
+
+    /**
+     * E2 — แจ้งอัตโนมัติที่ยังไม่ได้ส่ง (B3b): sent/sent owner_action automatic
+     * state new หรือ sending ค้างเกิน 120 วิ (claim ตาย — งานจะปิดเป็น unknown
+     * ไม่ยิงซ้ำ) เก่าสุดก่อน ไม่เกิน 5 ต่อบอทต่อสแกน คิวเสมอแม้บอทปิด (A5)
+     *
+     * @return int จำนวนงานที่คิวรอบนี้
+     */
+    private function queueAutoNotices(int $botId, CarbonImmutable $now): int
+    {
+        $noticeStaleCutoff = $now->subSeconds(self::NOTICE_STALE_SECONDS)->format('Y-m-d H:i:s');
+
+        $ids = DB::table('follow_up_approvals as a')
+            ->join('lead_recovery_logs as l', 'l.id', '=', 'a.lead_recovery_log_id')
+            ->where('l.bot_id', $botId)
+            ->where('l.delivery_status', LeadRecoveryLog::DELIVERY_STATUS_SENT)
+            ->where('a.status', FollowUpApproval::STATUS_SENT)
+            ->where('l.owner_action', LeadRecoveryLog::OWNER_ACTION_AUTOMATIC)
+            ->where(function ($state) use ($noticeStaleCutoff): void {
+                $state->where('a.telegram_delivery_state', FollowUpApproval::TELEGRAM_STATE_NEW)
+                    ->orWhere(function ($stale) use ($noticeStaleCutoff): void {
+                        $stale->where('a.telegram_delivery_state', FollowUpApproval::TELEGRAM_STATE_SENDING)
+                            ->where('a.updated_at', '<=', $noticeStaleCutoff);
+                    });
+            })
+            ->orderBy('a.id')
+            ->limit(self::MAX_AUTO_NOTICES)
+            ->pluck('a.id');
+
+        foreach ($ids as $id) {
+            SendCustomerFollowUp::dispatch((int) $id);
+        }
+
+        return count($ids);
+    }
+
+    /**
+     * E3 — การ์ดคืนจาก automatic (B3b): คู่ pending/pending state new ยังไม่หมดอายุ
+     * reason_code auto_* (ร่องรอยที่ revert ของตัวส่งทิ้งไว้ กรณี worker ตายก่อน publish)
+     * และ first_push_at ว่าง (A16: แถวที่ยิงแล้วไม่มีวันกลายเป็นการ์ด) เก่าสุดก่อน
+     * ไม่เกิน 5 ต่อบอทต่อสแกน คิวเสมอแม้สวิตช์ปิด — แต่ต้องยังมี plugin แจ้งเตือน
+     * ไม่งั้นปล่อยค้างจนหมดอายุตามปกติ
+     *
+     * @return int จำนวนงานที่คิวรอบนี้
+     */
+    private function queueAutoFallbackCards(int $botId, CarbonImmutable $now): int
+    {
+        $bot = Bot::query()->find($botId);
+
+        if ($bot === null || FollowUpCapabilities::alertPlugin($bot) === null) {
+            return 0;
+        }
+
+        $ids = DB::table('follow_up_approvals as a')
+            ->join('lead_recovery_logs as l', 'l.id', '=', 'a.lead_recovery_log_id')
+            ->where('l.bot_id', $botId)
+            ->where('l.delivery_status', LeadRecoveryLog::DELIVERY_STATUS_PENDING)
+            ->where('a.status', FollowUpApproval::STATUS_PENDING)
+            ->where('a.telegram_delivery_state', FollowUpApproval::TELEGRAM_STATE_NEW)
+            ->where('a.expires_at', '>', $now->format('Y-m-d H:i:s'))
+            ->whereNull('l.first_push_at')
+            ->whereIn('l.reason_code', self::AUTO_FALLBACK_REASONS)
+            ->orderBy('a.id')
+            ->limit(self::MAX_AUTO_FALLBACK_CARDS)
             ->pluck('a.id');
 
         foreach ($ids as $id) {
@@ -246,19 +360,6 @@ class ProcessCustomerFollowUps implements ShouldQueue
             && (bool) $settings->follow_up_enabled
             && $settings->follow_up_activation_message_id !== null
             && $settings->follow_up_activated_at !== null;
-    }
-
-    /** ชั่วโมงส่ง (กรุงเทพฯ) — ขอบรวม 08:00 ตัด 22:00 เหมือน FollowUpEligibility */
-    private function withinSendingHours(CarbonImmutable $now): bool
-    {
-        $local = $now->tz(FollowUpCapabilities::TIMEZONE);
-        $secondsOfDay = $local->hour * 3600 + $local->minute * 60 + $local->second;
-
-        [$startHour, $startMinute] = array_map(intval(...), explode(':', FollowUpCapabilities::SEND_START));
-        [$endHour, $endMinute] = array_map(intval(...), explode(':', FollowUpCapabilities::SEND_END));
-
-        return $secondsOfDay >= $startHour * 3600 + $startMinute * 60
-            && $secondsOfDay < $endHour * 3600 + $endMinute * 60;
     }
 
     /**

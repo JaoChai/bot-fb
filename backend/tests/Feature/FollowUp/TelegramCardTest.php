@@ -87,6 +87,17 @@ TEXT;
 เปิดห้อง: https://admin.example.test/chat?botId=26&amp;conversationId=1317
 TEXT;
 
+    /** ข้อความแจ้งเจ้านายหลังส่งเอง (B2) — คำตายตามการ์ด, dynamic หลุดเป็น entity หมด */
+    private const GOLDEN_NOTICE_TEXT = <<<'TEXT'
+ส่งข้อความตามลูกค้าอัตโนมัติแล้ว
+ลูกค้า: สมชาย &lt;ร้าน A&amp;B&gt;
+กลุ่ม: สนใจแต่ยังลังเล · มั่นใจ 86%
+ข้อความที่ส่ง:
+สวัสดีครับพี่ เมื่อวานที่คุยเรื่องบัญชีโฆษณาไว้
+มีจุดไหนให้ช่วยดูเพิ่มไหมครับ
+เปิดห้อง: https://admin.example.test/chat?botId=26&amp;conversationId=1317
+TEXT;
+
     /** @var list<MessageLogged> */
     private array $logEvents = [];
 
@@ -288,6 +299,14 @@ TEXT;
             'drafted_at' => '2026-11-15 09:30:00',
             'draft_day' => '2026-11-15',
             'draft_model' => 'openai/gpt-6-luna',
+            // B2: คอลัมน์ฝั่งส่ง/เจ้านาย (เท่า null ทุกค่าเริ่ม — แถวเดิมไม่เปลี่ยน)
+            'owner_action' => $get('log_owner_action', null),
+            'owner_action_at' => $get('log_owner_action_at', null),
+            'owner_telegram_user_id' => $get('log_owner_telegram_user_id', null),
+            'message_id' => $get('log_message_id', null),
+            'message_sent' => $get('log_message_sent', null),
+            'sent_at' => $get('log_sent_at', null),
+            'first_push_at' => $get('log_first_push_at', null),
             'created_at' => '2026-11-15 09:35:00',
             'updated_at' => '2026-11-15 09:35:00',
         ]);
@@ -437,6 +456,85 @@ TEXT;
         $this->assertNoSecretsInLog();
 
         return [$result, $requests];
+    }
+
+    /** publishAutomaticNotice หนึ่งครั้งใต้ fake — คืน [ผลลัพธ์, จำนวน request] */
+    private function noticeCounting(int $approvalId, \Closure $stub): array
+    {
+        [$result, $requests] = $this->noticeCapturing($approvalId, $stub);
+
+        return [$result, count($requests)];
+    }
+
+    private function noticeCapturing(int $approvalId, \Closure $stub): array
+    {
+        $requests = [];
+        $this->resetLogCaptures();
+        Http::fake(function ($request) use (&$requests, $stub) {
+            $requests[] = $request;
+
+            return $stub($request);
+        });
+
+        $result = app(FollowUpTelegramService::class)->publishAutomaticNotice($approvalId, $this->now());
+        $this->assertNoSecretsInLog();
+
+        return [$result, $requests];
+    }
+
+    /** refreshCard หนึ่งครั้งใต้ fake — คืน [ผลลัพธ์, รายการ request] */
+    private function refreshCapturing(int $approvalId): array
+    {
+        $requests = [];
+        $this->resetLogCaptures();
+        Http::fake(function ($request) use (&$requests) {
+            $requests[] = $request;
+
+            return $this->okStub()($request);
+        });
+
+        $result = app(FollowUpTelegramService::class)->refreshCard($approvalId, $this->now());
+        $this->assertNoSecretsInLog();
+
+        return [$result, $requests];
+    }
+
+    private function methodOf(object $request): string
+    {
+        $path = (string) parse_url((string) $request->url(), PHP_URL_PATH);
+
+        return substr($path, (int) strrpos($path, '/') + 1);
+    }
+
+    /**
+     * seed โลก automatic ส่งแล้ว: log sent + owner_action automatic (ไม่มีมือคน) + LINE ยืนยันแล้ว,
+     * approval sent กับ telegram state ตามที่กำหนด (ค่าเริ่ม new = แจ้งยังไม่ได้)
+     * log.message_id อ้าง FK messages จึงสร้างข้อความบอทที่ถูกส่งแล้วจริง —
+     * ส่ง 'log_message_id' => null มาเมื่อต้องการแถวที่ LINE ยังไม่ทิ้ง id
+     */
+    private function seedAutomaticSent(array $options = []): array
+    {
+        $sentText = (string) ($options['log_message_sent'] ?? self::DRAFT_CLEAN);
+        $wantsLineMessage = ! array_key_exists('log_message_id', $options) || $options['log_message_id'] !== null;
+
+        $seed = $this->seedPending(array_merge([
+            'log_delivery_status' => 'sent',
+            'log_owner_action' => 'automatic',
+            'log_owner_action_at' => '2026-11-16 09:52:00',
+            'log_owner_telegram_user_id' => null,
+            'log_message_sent' => $sentText,
+            'log_sent_at' => '2026-11-16 09:52:00',
+            'log_first_push_at' => '2026-11-16 09:52:00',
+            'approval_status' => 'sent',
+            'telegram_delivery_state' => 'new',
+        ], $options));
+
+        if ($wantsLineMessage) {
+            $lineMessageId = $this->addMessage($seed['room']->id, 'bot', '2026-11-16 09:52:00', $sentText);
+            DB::table('lead_recovery_logs')->where('id', $seed['log_id'])->update(['message_id' => $lineMessageId]);
+        }
+
+        return $seed;
     }
 
     // ------------------------------------------------- 1) ตารางการขนส่ง (transport)
@@ -1156,5 +1254,310 @@ TEXT;
         } else {
             self::assertStringNotContainsString('เจ้านายยังกดส่งได้ แต่ข้อความนี้มีคำเตือน', $requests[0]['text']);
         }
+    }
+
+    // ------------------------------------------------- 10) บอทแจ้งเจ้านายหลังส่งเอง (B2)
+
+    #[Test]
+    public function test_auto_notice_only_to_alert_room_has_escaped_fields_and_no_buttons(): void
+    {
+        // (a) คอลัมน์ที่เขียนได้ + ปลายทาง plugin เท่านั้น + ข้อความตายตัว (id ตายตัวฉบับ golden)
+        $seed = $this->seedAutomaticSent([
+            'bot_id' => 26,
+            'conversation_id' => 1317,
+            'log_id' => 123,
+            'bot_name' => 'Line - Adsvance',
+            'display_name' => 'สมชาย <ร้าน A&B>',
+        ]);
+        $approvalBefore = $this->approvalRow($seed['approval_id']);
+        $logBefore = $this->logRow($seed['log_id']);
+        $messagesBefore = $this->messageCount($seed['room']->id);
+
+        [$result, $requests] = $this->noticeCapturing($seed['approval_id'], $this->okStub());
+
+        self::assertSame('sent', $result);
+        self::assertCount(1, $requests, 'แจ้งหนึ่งครั้งยิงครั้งเดียว');
+        self::assertSame(
+            'https://api.telegram.org/bot'.'tg-plugin-token-'.self::TOKEN_TAIL.'/sendMessage',
+            (string) $requests[0]->url(),
+            'ปลายทางคือ token ของ plugin แจ้งเตือนเท่านั้น',
+        );
+        self::assertSame('999', $requests[0]['chat_id'], 'chat id ต้องมาจาก config ของ plugin');
+        self::assertSame('HTML', $requests[0]['parse_mode']);
+        self::assertSame(self::GOLDEN_NOTICE_TEXT, $requests[0]['text']);
+
+        $markup = json_decode((string) ($requests[0]['reply_markup'] ?? ''), true);
+        self::assertTrue(
+            $markup === null || array_filter($markup['inline_keyboard'] ?? []) === [],
+            'ห้ามมีปุ่มบนข้อความแจ้ง',
+        );
+
+        $row = $this->approvalRow($seed['approval_id']);
+        self::assertSame('sent', $row['telegram_delivery_state']);
+        self::assertSame(77, (int) $row['telegram_message_id'], 'จำ message id ของข้อความแจ้ง');
+        self::assertSame((int) $seed['plugin']->id, (int) $row['telegram_plugin_id']);
+        self::assertSame('999', $row['telegram_chat_id']);
+        self::assertSame(self::NOW, $row['updated_at']);
+        $this->assertRowChangedOnly($approvalBefore, $row, [
+            'telegram_delivery_state',
+            'telegram_message_id',
+            'telegram_plugin_id',
+            'telegram_chat_id',
+            'updated_at',
+        ]);
+        $this->assertRowChangedOnly($logBefore, $this->logRow($seed['log_id']), [], 'ฝั่ง LINE บน log ห้ามเปลี่ยน');
+        self::assertSame($messagesBefore, $this->messageCount($seed['room']->id));
+
+        // (b) ค่าทุกฟิลด์เป็นพิษ — escape หมด ไม่มี < หลุดรอด (คำของข้อความแจ้งไม่มีแท็กเลย)
+        $hostile = '<b>x</b> & "q" <a href="https://evil.test">l</a>';
+        $hostileSeed = $this->seedAutomaticSent([
+            'display_name' => $hostile,
+            'log_message_sent' => $hostile."\nบรรทัดสอง",
+        ]);
+        [$hostileResult, $hostileRequests] = $this->noticeCapturing($hostileSeed['approval_id'], $this->okStub());
+
+        self::assertSame('sent', $hostileResult);
+        self::assertCount(1, $hostileRequests);
+        $text = $hostileRequests[0]['text'];
+        self::assertStringNotContainsString('<', $text, 'ข้อความแจ้งไม่มีแท็กจริง ทุก < ต้องเป็น entity');
+        $decoded = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
+        $redactedName = trim((string) preg_replace('/\s+/u', ' ', FollowUpRedactor::redact($hostile)));
+        self::assertStringContainsString('ลูกค้า: '.$redactedName."\n", $decoded);
+        self::assertStringContainsString('ข้อความที่ส่ง:'."\n".$hostile."\nบรรทัดสอง"."\n", $decoded);
+    }
+
+    /** ลูกค้าไร้ชื่อ = บรรทัด fallback หมายเลขห้อง — กฎเดียวกับการ์ด */
+    #[Test]
+    public function test_auto_notice_customer_fallback_line(): void
+    {
+        $seed = $this->seedAutomaticSent(['profile_null' => true]);
+
+        [, $requests] = $this->noticeCapturing($seed['approval_id'], $this->okStub());
+
+        self::assertStringContainsString(
+            'ลูกค้า #'.($seed['room']->id)."\n",
+            html_entity_decode($requests[0]['text'], ENT_QUOTES, 'UTF-8'),
+        );
+    }
+
+    /** @return array<string, array<int, mixed>> */
+    public static function noticeGuardCases(): array
+    {
+        return [
+            'log approved (not sent)' => [['log_delivery_status' => 'approved']],
+            'log pending (not sent)' => [['log_delivery_status' => 'pending']],
+            'approval approved (not sent)' => [['approval_status' => 'approved']],
+            'approval pending (not sent)' => [['approval_status' => 'pending']],
+            'owner action sent (human)' => [['log_owner_action' => 'sent', 'log_owner_telegram_user_id' => '555']],
+            'owner action edited (human)' => [['log_owner_action' => 'edited', 'log_owner_telegram_user_id' => '555']],
+            'owner action skipped (human)' => [['log_owner_action' => 'skipped']],
+            'owner action null' => [['log_owner_action' => null]],
+            'line message id null' => [['log_message_id' => null]],
+        ];
+    }
+
+    #[Test]
+    #[DataProvider('noticeGuardCases')]
+    public function test_notice_requires_sent_automatic(array $overrides): void
+    {
+        $seed = $this->seedAutomaticSent($overrides);
+        $approvalBefore = $this->approvalRow($seed['approval_id']);
+
+        [$result, $requests] = $this->noticeCounting($seed['approval_id'], $this->okStub());
+
+        self::assertSame('blocked', $result);
+        self::assertSame(0, $requests);
+        $this->assertRowChangedOnly($approvalBefore, $this->approvalRow($seed['approval_id']), []);
+    }
+
+    #[Test]
+    public function test_notice_rejects_unexpected_delivery_state(): void
+    {
+        $seed = $this->seedAutomaticSent(['telegram_delivery_state' => 'weird']);
+        $before = $this->approvalRow($seed['approval_id']);
+
+        [$result, $requests] = $this->noticeCounting($seed['approval_id'], $this->okStub());
+
+        self::assertSame('blocked', $result);
+        self::assertSame(0, $requests);
+        $this->assertRowChangedOnly($before, $this->approvalRow($seed['approval_id']), []);
+    }
+
+    #[Test]
+    public function test_notice_failure_does_not_change_sent(): void
+    {
+        // (a) Telegram ตอบ 400 → failed, ฝั่ง LINE บน log เท่าเดิมทุกคอลัมน์
+        $seed = $this->seedAutomaticSent();
+        $approvalBefore = $this->approvalRow($seed['approval_id']);
+        $logBefore = $this->logRow($seed['log_id']);
+        $stub = fn () => Http::response(json_encode(['ok' => false, 'error_code' => 400, 'description' => 'Bad Request: chat not found '.self::BODY_CANARY]), 400);
+
+        [$result, $requests] = $this->noticeCounting($seed['approval_id'], $stub);
+
+        self::assertSame('failed', $result);
+        self::assertSame(1, $requests);
+        $row = $this->approvalRow($seed['approval_id']);
+        self::assertSame('failed', $row['telegram_delivery_state']);
+        // claim ประทับ plugin/chat ที่ใช้ยิงไว้บนแถว (เครื่องจักรเดียวกับ publish) — final write เขียนแค่ state
+        $this->assertRowChangedOnly($approvalBefore, $row, ['telegram_delivery_state', 'telegram_plugin_id', 'telegram_chat_id', 'updated_at']);
+        $this->assertRowChangedOnly($logBefore, $this->logRow($seed['log_id']), [], 'ผลแจ้งพัง = ผลส่ง LINE คงเดิมทุกคอลัมน์');
+
+        // แจ้งซ้ำ = failed เดิม ไม่ยิงซ้ำ
+        [$again, $againRequests] = $this->noticeCounting($seed['approval_id'], $stub);
+        self::assertSame('failed', $again);
+        self::assertSame(0, $againRequests);
+
+        // (b) ต่อเน็ตไม่ได้ → unknown, ฝั่ง LINE ก็เท่าเดิม
+        $timeoutSeed = $this->seedAutomaticSent();
+        $timeoutLogBefore = $this->logRow($timeoutSeed['log_id']);
+        $timeoutStub = fn () => throw new ConnectionException('cURL error 28 timeout '.$this->fakeToken());
+
+        [$timeoutResult, $timeoutRequests] = $this->noticeCounting($timeoutSeed['approval_id'], $timeoutStub);
+
+        self::assertSame('unknown', $timeoutResult);
+        self::assertSame(1, $timeoutRequests);
+        self::assertSame('unknown', $this->approvalRow($timeoutSeed['approval_id'])['telegram_delivery_state']);
+        $this->assertRowChangedOnly($timeoutLogBefore, $this->logRow($timeoutSeed['log_id']), []);
+    }
+
+    #[Test]
+    public function test_notice_crash_no_second_request(): void
+    {
+        // claim ยังสด (119 วิ) = busy ไม่ยิงอะไร
+        $fresh = $this->seedAutomaticSent(['telegram_delivery_state' => 'sending', 'approval_updated_at' => '2026-11-16 09:58:01']);
+        [$freshResult, $freshRequests] = $this->noticeCounting($fresh['approval_id'], $this->okStub());
+        self::assertSame('busy', $freshResult);
+        self::assertSame(0, $freshRequests);
+        self::assertSame('sending', $this->approvalRow($fresh['approval_id'])['telegram_delivery_state']);
+
+        // worker ตายหลัง claim (120 วิเต็ม) → ทำเครื่องหมาย unknown ไม่ยิงซ้ำ
+        $stale = $this->seedAutomaticSent(['telegram_delivery_state' => 'sending', 'approval_updated_at' => '2026-11-16 09:58:00']);
+        $staleBefore = $this->approvalRow($stale['approval_id']);
+
+        [$result, $requests] = $this->noticeCounting($stale['approval_id'], $this->okStub());
+
+        self::assertSame('unknown', $result);
+        self::assertSame(0, $requests, 'คำขอ Telegram รวมทั้งชีวิตแถวยังเป็นครั้งเดียวของ worker ที่ตาย');
+        $row = $this->approvalRow($stale['approval_id']);
+        self::assertSame('unknown', $row['telegram_delivery_state']);
+        $this->assertRowChangedOnly($staleBefore, $row, ['telegram_delivery_state', 'updated_at']);
+
+        // เรียกอีก = unknown เดิม ไม่ยิงเพิ่ม
+        [$again, $againRequests] = $this->noticeCounting($stale['approval_id'], $this->okStub());
+        self::assertSame('unknown', $again);
+        self::assertSame(0, $againRequests);
+    }
+
+    #[Test]
+    public function test_auto_notice_is_never_repainted_as_card(): void
+    {
+        $seed = $this->seedAutomaticSent([
+            'telegram_delivery_state' => 'sent',
+            'telegram_message_id' => 77,
+            'telegram_chat_id' => '999',
+        ]);
+        DB::table('follow_up_approvals')->where('id', $seed['approval_id'])->update([
+            'telegram_plugin_id' => $seed['plugin']->id,
+        ]);
+
+        $refreshResult = app(FollowUpTelegramService::class)->refreshCard($seed['approval_id'], $this->now());
+        $syncResult = app(FollowUpTelegramService::class)->syncCard($seed['approval_id'], $this->now());
+
+        self::assertSame('unchanged', $refreshResult, 'ข้อความแจ้งอัตโนมัติห้ามถูกวาดทับเป็นการ์ด');
+        self::assertSame('unchanged', $syncResult);
+    }
+
+    #[Test]
+    public function test_notice_repaint_makes_zero_requests_for_human_row_control(): void
+    {
+        // กรณีควบคุม: แถวเจ้านายกดเอง (owner_action sent) ยังถูก repaint ตามเดิม — พิสูจน์ว่าเช็ค owner_action ต่างจาก automatic จริง
+        $human = $this->seedPending([
+            'log_delivery_status' => 'sent',
+            'log_owner_action' => 'sent',
+            'log_owner_action_at' => '2026-11-16 09:52:00',
+            'log_owner_telegram_user_id' => '555',
+            'log_message_sent' => self::DRAFT_CLEAN,
+            'approval_status' => 'sent',
+            'telegram_delivery_state' => 'sent',
+            'telegram_message_id' => 77,
+            'telegram_chat_id' => '999',
+        ]);
+        $humanMessageId = $this->addMessage($human['room']->id, 'bot', '2026-11-16 09:52:00', self::DRAFT_CLEAN);
+        DB::table('lead_recovery_logs')->where('id', $human['log_id'])->update(['message_id' => $humanMessageId]);
+        DB::table('follow_up_approvals')->where('id', $human['approval_id'])->update([
+            'telegram_plugin_id' => $human['plugin']->id,
+        ]);
+
+        [$result, $requests] = $this->noticeCapturing($human['approval_id'], $this->okStub());
+        self::assertSame('blocked', $result);
+        self::assertCount(0, $requests);
+
+        [$refreshResult, $refreshRequests] = $this->refreshCapturing($human['approval_id']);
+        self::assertSame('refreshed', $refreshResult, 'การ์ดเจ้านายยัง repaint ตามเดิม');
+        self::assertCount(1, $refreshRequests);
+        self::assertSame('editMessageText', $this->methodOf($refreshRequests[0]));
+    }
+
+    #[Test]
+    public function test_notice_missing_plugin_or_mismatch_fails_closed(): void
+    {
+        // (a) plugin หาย
+        $missing = $this->seedAutomaticSent();
+        FlowPlugin::query()->where('id', $missing['plugin']->id)->delete();
+        [$missingResult, $missingRequests] = $this->noticeCounting($missing['approval_id'], $this->okStub());
+        self::assertSame('blocked', $missingResult);
+        self::assertSame(0, $missingRequests);
+        self::assertSame('new', $this->approvalRow($missing['approval_id'])['telegram_delivery_state']);
+
+        // (b) chat id บนแถวไม่ตรง chat ปัจจุบันของ plugin — ห้ามยิงตามค่าที่ติดแถวมา
+        $chatMismatch = $this->seedAutomaticSent();
+        DB::table('follow_up_approvals')->where('id', $chatMismatch['approval_id'])->update([
+            'telegram_chat_id' => 'other-chat',
+        ]);
+        [$chatResult, $chatRequests] = $this->noticeCounting($chatMismatch['approval_id'], $this->okStub());
+        self::assertSame('blocked', $chatResult);
+        self::assertSame(0, $chatRequests);
+        self::assertSame('new', $this->approvalRow($chatMismatch['approval_id'])['telegram_delivery_state']);
+
+        // (c) plugin id บนแถวไม่ตรง plugin ปัจจุบันของ flow เริ่มต้น (FK ต้องชี้ plugin ที่มีจริง)
+        $pluginMismatch = $this->seedAutomaticSent();
+        $otherFlow = Flow::factory()->create(['bot_id' => $pluginMismatch['bot']->id]);
+        $otherPlugin = FlowPlugin::create([
+            'flow_id' => $otherFlow->id,
+            'type' => 'telegram',
+            'name' => 'แจ้งเตือนอีก flow',
+            'enabled' => true,
+            'trigger_condition' => 'always',
+            'config' => [
+                'access_token' => 'tg-other-flow-token-'.self::TOKEN_TAIL,
+                'chat_id' => 'other-flow-chat',
+            ],
+        ]);
+        DB::table('follow_up_approvals')->where('id', $pluginMismatch['approval_id'])->update([
+            'telegram_plugin_id' => $otherPlugin->id,
+        ]);
+        [$pluginResult, $pluginRequests] = $this->noticeCounting($pluginMismatch['approval_id'], $this->okStub());
+        self::assertSame('blocked', $pluginResult);
+        self::assertSame(0, $pluginRequests);
+        self::assertSame('new', $this->approvalRow($pluginMismatch['approval_id'])['telegram_delivery_state']);
+    }
+
+    #[Test]
+    public function test_notice_missing_approval_or_log_or_bot_is_blocked(): void
+    {
+        $this->resetLogCaptures();
+        Http::fake(fn () => Http::response('{}', 200));
+
+        self::assertSame('blocked', app(FollowUpTelegramService::class)->publishAutomaticNotice(424242, $this->now()));
+
+        $orphan = $this->seedAutomaticSent();
+        DB::table('lead_recovery_logs')->where('id', $orphan['log_id'])->delete();
+        self::assertSame('blocked', app(FollowUpTelegramService::class)->publishAutomaticNotice($orphan['approval_id'], $this->now()));
+
+        $noBot = $this->seedAutomaticSent();
+        DB::table('bots')->where('id', $noBot['bot']->id)->delete();
+        self::assertSame('blocked', app(FollowUpTelegramService::class)->publishAutomaticNotice($noBot['approval_id'], $this->now()));
+
+        $this->assertNoSecretsInLog();
     }
 }
