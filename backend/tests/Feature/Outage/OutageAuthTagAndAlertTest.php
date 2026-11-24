@@ -140,9 +140,6 @@ class OutageAuthTagAndAlertTest extends TestCase
     public function test_the_first_auth_failure_sends_exactly_one_owner_alert(): void
     {
         [$bot, $conversation] = $this->makeBotWithConversation();
-        // faker สุ่มชื่อที่มีอักขระ HTML พิเศษ (' & < >) ได้ เช่น O'Reilly — บังคับชื่อให้ครอบกรณีนั้นตลอด
-        // ข้อความ alert ส่งด้วย parse_mode HTML ของ Telegram และชื่อถูก esc() ก่อนประกอบ จึงต้องเทียบค่าที่ escape แล้ว
-        $bot->update(['name' => "O'Reilly <Ads> & Co"]);
         $this->fakeOpenRouterFailure(401);
         $this->fakeOwnerAlertAndCustomerDelivery();
 
@@ -610,8 +607,11 @@ class OutageAuthTagAndAlertTest extends TestCase
     private function makeBotWithConversation(bool $withTelegramPlugin = true): array
     {
         $user = User::factory()->owner()->create();
+        // ชื่อที่มี ' และ & แบบที่ Faker สุ่มได้ (CI เคยโดน VonRueden-D'Amore Bot) —
+        // ทำให้ทุกเคสในไฟล์นี้เจอชื่อที่ถูก esc() เสมอ แทนที่จะสุ่มล้มเฉพาะบางรัน
         $bot = Bot::factory()->active()->line()->create([
             'user_id' => $user->id,
+            'name' => 'VonRueden-D\'Amore & Sons Bot',
             'channel_access_token' => 'line-token',
             'primary_chat_model' => 'test/primary-model',
             'fallback_chat_model' => 'test/fallback-model',
