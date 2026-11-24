@@ -61,6 +61,24 @@ if (is_string($rawAdminWebUrl) && $rawAdminWebUrl !== '') {
     }
 }
 
+// เกณฑ์ความมั่นใจขั้นต่ำของโหมดอัตโนมัติ — ตั้งจากฝั่ง host ได้ผ่าน env (แนวเดียวกับ automatic_bot_ids ด้านบน)
+// ไม่ตั้ง env = 0.8 เท่าเดิม (merge/deploy อย่างเดียวต้องไม่เปลี่ยนพฤติกรรม)
+// ตั้งแล้วต้องเป็นตัวเลขในช่วง [0,1] เท่านั้น — ว่าง/ผิดรูป/นอกช่วง = null
+// แล้วกฎ A1 (FollowUpAutomaticRule::reason) fail closed เป็น auto_confidence = ไม่ส่งเองเลย
+// ห้าม fallback ไปค่าที่หลวมกว่า 0.8 ทุกกรณี
+$automaticMinConfidence = null;
+$rawMinConfidence = env('CUSTOMER_FOLLOW_UP_AUTOMATIC_MIN_CONFIDENCE');
+if ($rawMinConfidence === null) {
+    $automaticMinConfidence = 0.8;
+} elseif (is_string($rawMinConfidence) && trim($rawMinConfidence) !== '') {
+    $parsedMinConfidence = filter_var(trim($rawMinConfidence), FILTER_VALIDATE_FLOAT);
+    if ($parsedMinConfidence !== false
+        && $parsedMinConfidence >= 0.0
+        && $parsedMinConfidence <= 1.0) {
+        $automaticMinConfidence = $parsedMinConfidence;
+    }
+}
+
 return [
 
     /*
@@ -113,11 +131,13 @@ return [
     'approval_ttl_hours' => 12,
 
     /*
-    | เกณฑ์ Luna: กลุ่มจ่าย/ขายมั่นใจ >= 0.8 ถึงโหมดอัตโนมัติได้;
+    | เกณฑ์ Luna: กลุ่มจ่าย/ขายมั่นใจ >= automatic_min_confidence ถึงโหมดอัตโนมัติได้
+    | (ค่าเริ่มต้น 0.8 — ปรับจากฝั่ง host ผ่าน env CUSTOMER_FOLLOW_UP_AUTOMATIC_MIN_CONFIDENCE;
+    | ค่าผิดรูป = null และกฎ A1 fail closed ไม่ส่งเองเลย);
     | คะแนน "โอกาสเสียลูกค้า" (declined) เข้าเกณฑ์ >= 0.5 ถึงควรตาม;
     | การเช็คฉบับร่าง คำตอบใช่ >= 0.5 นับเป็นเจอข้อห้าม
     */
-    'automatic_min_confidence' => 0.8,
+    'automatic_min_confidence' => $automaticMinConfidence,
     'declined_threshold' => 0.5,
     'check_yes_threshold' => 0.5,
 
