@@ -140,7 +140,9 @@ describe('useAuth session cleanup', () => {
     expect(queryClient.getQueryData(messagesKey)).toBeUndefined();
     expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
     expect(await get(PERSISTENCE_KEY)).toBeNull();
-    expect(navPath).toBe('/login');
+    // navigate('/login') ถูก flush บน scheduler ของ React "หลัง" promise ของการเคลียร์เสร็จ
+    // การอ่าน navPath ทันทีจึงเจอ path เก่าได้ (CI ล้มแบบสุ่ม) — รอเงื่อนไขจริงแทนการเดาจังหวะ
+    await waitFor(() => expect(navPath).toBe('/login'));
   });
 
   it('explicit logout clears queries and the persisted copy on success', async () => {

@@ -148,7 +148,7 @@ class OutageAuthTagAndAlertTest extends TestCase
         $alerts = $this->telegramAlerts();
         $this->assertCount(1, $alerts);
         $this->assertSame('999', $alerts[0]['chat_id']);
-        $this->assertStringContainsString($bot->name, $alerts[0]['text']);
+        $this->assertStringContainsString($this->esc($bot->name), $alerts[0]['text']);
         $this->assertStringContainsString('HTTP 401', $alerts[0]['text']);
     }
 
@@ -607,8 +607,11 @@ class OutageAuthTagAndAlertTest extends TestCase
     private function makeBotWithConversation(bool $withTelegramPlugin = true): array
     {
         $user = User::factory()->owner()->create();
+        // ชื่อที่มี ' และ & แบบที่ Faker สุ่มได้ (CI เคยโดน VonRueden-D'Amore Bot) —
+        // ทำให้ทุกเคสในไฟล์นี้เจอชื่อที่ถูก esc() เสมอ แทนที่จะสุ่มล้มเฉพาะบางรัน
         $bot = Bot::factory()->active()->line()->create([
             'user_id' => $user->id,
+            'name' => 'VonRueden-D\'Amore & Sons Bot',
             'channel_access_token' => 'line-token',
             'primary_chat_model' => 'test/primary-model',
             'fallback_chat_model' => 'test/fallback-model',
