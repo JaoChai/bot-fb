@@ -8,9 +8,10 @@ use Tests\TestCase;
 /**
  * การ์ด B2a — config/customer_follow_up.php ตาม plan §3.2
  *
- * ทุก key ต้องมีค่าตั้งต้นตรงแผน และ 3 key ที่อ่านจาก env ต้อง fail-closed:
+ * ทุก key ต้องมีค่าตั้งต้นตรงแผน และ 4 key ที่อ่านจาก env ต้อง fail-closed:
  * - quota_reserve_messages: ขาด/ไม่ใช่จำนวนเต็ม/ไม่เป็นบวก → null (null = หยุดส่ง)
  * - automatic_bot_ids: เอาเฉพาะจำนวนเต็มบวก ตัวอื่นทิ้ง → [] เมื่อไม่มีค่า
+ * - automatic_min_confidence: ขาด = 0.8 เท่าเดิม; ว่าง/ผิดรูป/นอกช่วง [0,1] → null (กฎ A1 fail closed)
  * - admin_web_url: ยอมรับเฉพาะ https origin → อย่างอื่น null (capability ยังล็อก)
  */
 class ConfigTest extends TestCase
@@ -19,6 +20,7 @@ class ConfigTest extends TestCase
         'CUSTOMER_FOLLOW_UP_LINE_RESERVE',
         'CUSTOMER_FOLLOW_UP_AUTOMATIC_BOT_IDS',
         'CUSTOMER_FOLLOW_UP_ADMIN_WEB_URL',
+        'CUSTOMER_FOLLOW_UP_AUTOMATIC_MIN_CONFIDENCE',
     ];
 
     /**
@@ -103,6 +105,23 @@ class ConfigTest extends TestCase
         $this->assertSame([], $read([]), 'absent env must give an empty list');
         $this->assertSame([26], $read(['CUSTOMER_FOLLOW_UP_AUTOMATIC_BOT_IDS' => '26']), 'single positive id passes');
         $this->assertSame([26], $read(['CUSTOMER_FOLLOW_UP_AUTOMATIC_BOT_IDS' => '26,x,-1']), 'only positive integers are kept');
+    }
+
+    #[Test]
+    public function test_automatic_min_confidence_env_cases(): void
+    {
+        $read = fn (array $env) => $this->loadConfig($env)['automatic_min_confidence'];
+
+        $this->assertSame(0.8, $read([]), 'absent env must keep the current default 0.8 (merge alone must not change behavior)');
+        $this->assertSame(0.5, $read(['CUSTOMER_FOLLOW_UP_AUTOMATIC_MIN_CONFIDENCE' => '0.5']), 'valid value in range passes through');
+        $this->assertSame(0.0, $read(['CUSTOMER_FOLLOW_UP_AUTOMATIC_MIN_CONFIDENCE' => '0']), 'lower bound 0 is in range');
+        $this->assertSame(1.0, $read(['CUSTOMER_FOLLOW_UP_AUTOMATIC_MIN_CONFIDENCE' => '1']), 'upper bound 1 is in range');
+        $this->assertSame(0.5, $read(['CUSTOMER_FOLLOW_UP_AUTOMATIC_MIN_CONFIDENCE' => ' 0.5 ']), 'surrounding whitespace is trimmed, not rejected');
+        $this->assertNull($read(['CUSTOMER_FOLLOW_UP_AUTOMATIC_MIN_CONFIDENCE' => '']), 'empty env must fail closed (null, never a looser value)');
+        $this->assertNull($read(['CUSTOMER_FOLLOW_UP_AUTOMATIC_MIN_CONFIDENCE' => 'abc']), 'non-numeric must fail closed');
+        $this->assertNull($read(['CUSTOMER_FOLLOW_UP_AUTOMATIC_MIN_CONFIDENCE' => '1.5']), 'above range must fail closed');
+        $this->assertNull($read(['CUSTOMER_FOLLOW_UP_AUTOMATIC_MIN_CONFIDENCE' => '-0.2']), 'below range must fail closed');
+        $this->assertNull($read(['CUSTOMER_FOLLOW_UP_AUTOMATIC_MIN_CONFIDENCE' => true]), 'env() parses "true" as bool: bool must never become a threshold, null');
     }
 
     #[Test]

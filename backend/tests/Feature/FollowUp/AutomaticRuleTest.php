@@ -199,6 +199,62 @@ class AutomaticRuleTest extends TestCase
         $this->assertSame('auto_switch_off', $rule->reason($this->logRow($logId), $this->approvalRow($approvalId), $now), 'missing settings');
     }
 
+    /**
+     * เกณฑ์ที่ host ตั้งผ่าน env — ร่าง 0.59 / 0.72 (เคยตกเกณฑ์ 0.8 → ออกการ์ด)
+     * ต้องส่งเองได้เมื่อ env = 0.5 ส่วน 0.37 ยังต่ำกว่าเกณฑ์ → ยังออกการ์ด (auto_confidence)
+     */
+    #[Test]
+    public function test_auto_rule_env_050_lets_marginal_drafts_send_automatically(): void
+    {
+        foreach ([0.59, 0.72] as $confidence) {
+            [$logId, $approvalId] = $this->makeReady(['group_confidence' => $confidence]);
+            $this->setMinConfidenceEnv('0.5');
+
+            $this->assertNull(
+                $this->rule()->reason($this->logRow($logId), $this->approvalRow($approvalId), $this->now()),
+                sprintf('draft confidence %.4f must send automatically at env min 0.5', $confidence),
+            );
+        }
+
+        [$lowLogId, $lowApprovalId] = $this->makeReady(['group_confidence' => 0.37]);
+        $this->setMinConfidenceEnv('0.5');
+
+        $this->assertSame(
+            'auto_confidence',
+            $this->rule()->reason($this->logRow($lowLogId), $this->approvalRow($lowApprovalId), $this->now()),
+            'draft confidence 0.3700 must still become a card at env min 0.5',
+        );
+    }
+
+    /** ขอบล่างของกฎ: ความมั่นใจเท่ากับเกณฑ์พอดี (0.5 == 0.5) ต้องผ่าน ไม่ใช่ตก */
+    #[Test]
+    public function test_auto_rule_env_050_boundary_exact_value_passes(): void
+    {
+        [$logId, $approvalId] = $this->makeReady(['group_confidence' => 0.5]);
+        $this->setMinConfidenceEnv('0.5');
+
+        $this->assertNull($this->rule()->reason($this->logRow($logId), $this->approvalRow($approvalId), $this->now()));
+    }
+
+    /**
+     * env ผิดรูป (ว่าง / ไม่ใช่ตัวเลข / นอกช่วง [0,1]) ต้อง fail closed:
+     * config ได้ null → กฎ A1 คืน auto_confidence = ไม่ส่งเองเลย ห้ามตกไปค่าที่หลวมกว่า
+     */
+    #[Test]
+    public function test_auto_rule_env_malformed_values_fail_closed(): void
+    {
+        foreach (['' => 'empty', 'abc' => 'non numeric', '1.5' => 'above range', '-0.2' => 'below range'] as $raw => $label) {
+            [$logId, $approvalId] = $this->makeReady(['group_confidence' => 0.9]);
+            $this->setMinConfidenceEnv($raw);
+
+            $this->assertSame(
+                'auto_confidence',
+                $this->rule()->reason($this->logRow($logId), $this->approvalRow($approvalId), $this->now()),
+                sprintf('env %s (%s) must fail closed to auto_confidence', var_export($raw, true), $label),
+            );
+        }
+    }
+
     /** บัตรรูป object ล้วน (แถวจาก query builder — check_answers เป็น JSON string ดิบ) ต้องตัดสินได้เหมือนโมเดล */
     #[Test]
     public function test_auto_rule_accepts_plain_object_approval(): void
@@ -366,6 +422,29 @@ class AutomaticRuleTest extends TestCase
     private function setApproval(int $approvalId, array $values): void
     {
         DB::table('follow_up_approvals')->where('id', $approvalId)->update($values);
+    }
+
+    /**
+     * ตั้งเกณฑ์ความมั่นใจขั้นต่ำผ่าน env แบบเดียวกับที่ config/customer_follow_up.php อ่านจริง
+     * (reload เฉพาะ key นี้จากไฟล์ config — ไม่แตะ key อื่นที่ makeReady ตั้งไว้)
+     */
+    private function setMinConfidenceEnv(?string $value): void
+    {
+        $key = 'CUSTOMER_FOLLOW_UP_AUTOMATIC_MIN_CONFIDENCE';
+
+        try {
+            if ($value === null) {
+                unset($_ENV[$key], $_SERVER[$key]);
+            } else {
+                $_ENV[$key] = $value;
+                $_SERVER[$key] = $value;
+            }
+
+            $config = require config_path('customer_follow_up.php');
+            config(['customer_follow_up.automatic_min_confidence' => $config['automatic_min_confidence']]);
+        } finally {
+            unset($_ENV[$key], $_SERVER[$key]);
+        }
     }
 
     private function cleanCheck(): string
