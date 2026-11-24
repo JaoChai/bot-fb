@@ -140,6 +140,9 @@ class OutageAuthTagAndAlertTest extends TestCase
     public function test_the_first_auth_failure_sends_exactly_one_owner_alert(): void
     {
         [$bot, $conversation] = $this->makeBotWithConversation();
+        // faker สุ่มชื่อที่มีอักขระ HTML พิเศษ (' & < >) ได้ เช่น O'Reilly — บังคับชื่อให้ครอบกรณีนั้นตลอด
+        // ข้อความ alert ส่งด้วย parse_mode HTML ของ Telegram และชื่อถูก esc() ก่อนประกอบ จึงต้องเทียบค่าที่ escape แล้ว
+        $bot->update(['name' => "O'Reilly <Ads> & Co"]);
         $this->fakeOpenRouterFailure(401);
         $this->fakeOwnerAlertAndCustomerDelivery();
 
@@ -148,7 +151,7 @@ class OutageAuthTagAndAlertTest extends TestCase
         $alerts = $this->telegramAlerts();
         $this->assertCount(1, $alerts);
         $this->assertSame('999', $alerts[0]['chat_id']);
-        $this->assertStringContainsString($bot->name, $alerts[0]['text']);
+        $this->assertStringContainsString($this->esc($bot->name), $alerts[0]['text']);
         $this->assertStringContainsString('HTTP 401', $alerts[0]['text']);
     }
 
