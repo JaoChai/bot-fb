@@ -61,10 +61,12 @@ class LunaPayloadScrubber
                 '/(รหัสผ่าน|พาสเวิร์ด|password|pass|pwd|pw|พาส|รหัส)(\s*[:=｜|]\s*)[^\s|｜]{1,120}/iu',
                 '$1$2'.self::PLACEHOLDER_CODE,
             ],
-            // space form: the value must contain an ASCII letter/digit, so plain
-            // Thai words after the keyword (e.g. "รหัส อ้างอิง") are not eaten
+            // space form: bare "pass" included (QA seq 1464: "pass FakePw1",
+            // "ID 12345 pass 67890"); the value must contain an ASCII letter or
+            // digit, so plain Thai words after the keyword are not eaten;
+            // Latin keywords are word-bounded so "bypass" etc. stay untouched
             'password_value_space' => [
-                '/(รหัสผ่าน|พาสเวิร์ด|password|pwd|pw|พาส|รหัส)(\s+)([^\s]{4,120})/iu',
+                '/((?<![A-Za-z])(?:password|pwd|pw|pass)(?![A-Za-z])|รหัสผ่าน|พาสเวิร์ด|พาส|รหัส)(\s+)([^\s]{4,120})/iu',
                 fn (array $m): string => preg_match('/[A-Za-z0-9]/', $m[3]) === 1
                     ? $m[1].$m[2].self::PLACEHOLDER_CODE
                     : $m[0],
@@ -103,14 +105,44 @@ class LunaPayloadScrubber
 
     private function hasKeywordWithLongDigitRun(string $line): bool
     {
-        return preg_match('/(?:รหัส|บัญชี)/u', $line) === 1
-            && preg_match('/[0-9]{5,}/', $line) === 1;
+        // placeholders inserted by the value rules contain "รหัส" themselves and
+        // must not re-trigger this rule on values that were already masked
+        $analysis = (string) preg_replace('/\[[^\]]+\]/u', ' ', $line);
+
+        if (preg_match('/(?:รหัส|บัญชี)/u', $analysis) !== 1) {
+            return false;
+        }
+
+        // QA (seq 1464): a >=5 digit run only counts as credential-like when it
+        // is NOT part of dashed bank-transfer formats, a #order number, a
+        // postal code, or an amount followed by บาท
+        if (preg_match_all('/(?<![-#0-9])([0-9]{5,})(?![-0-9])/', $analysis, $matches, PREG_OFFSET_CAPTURE) === 0) {
+            return false;
+        }
+
+        foreach ($matches[1] as [$run, $offset]) {
+            $after = $offset + strlen($run);
+            $charOffset = mb_strlen(substr($analysis, 0, $offset));
+            $before = mb_substr($analysis, max(0, $charOffset - 24), max(0, $charOffset));
+
+            if (preg_match('/ไปรษณีย์\s*$/u', $before) === 1) {
+                continue; // postal code
+            }
+
+            if (preg_match('/^\s?บาท/u', substr($analysis, $after)) === 1) {
+                continue; // amount
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     /**
      * @throws RuntimeException when preg_replace fails (never leaks the text)
      */
-    public function scrub(string $text): string
+    public function scrub(string $text, bool $isCustomerMessage = true): string
     {
         if ($text === '') {
             return $text;
@@ -126,6 +158,13 @@ class LunaPayloadScrubber
             }
         }
 
-        return $this->scrubLines($text);
+        // QA (seq 1464): the line-level rules are too blunt for bot context
+        // lines (bank transfer formats, postal codes, amounts, order numbers),
+        // so they apply to CUSTOMER messages only.
+        if ($isCustomerMessage) {
+            $text = $this->scrubLines($text);
+        }
+
+        return $text;
     }
 }

@@ -133,10 +133,14 @@ class SupportRouterService
         // latest message. Fail-safe: if the scrubber ever breaks, skip the
         // Luna call this turn — never send raw text silently.
         try {
-            $latestForLuna = $this->scrubber->scrub($latestMessage);
+            $latestForLuna = $this->scrubber->scrub($latestMessage, true);
             $historyForLuna = array_map(function (array $message) {
                 if (is_string($message['content'] ?? null)) {
-                    $message['content'] = $this->scrubber->scrub($message['content']);
+                    // line-level rules apply to customer messages only
+                    $message['content'] = $this->scrubber->scrub(
+                        $message['content'],
+                        ($message['sender'] ?? '') === 'user',
+                    );
                 }
 
                 return $message;
