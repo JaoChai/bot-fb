@@ -33,8 +33,11 @@ class SupportRouterScrubbingTest extends TestCase
     private const DECISIONS_URL = 'https://openrouter.ai/api/alpha/decisions';
 
     private const FIXTURE_SUPPORT_BODY_JSON = '{"model":"openai\\/gpt-6-luna-decisions","state":{"shop":"Online shop chat. The bot sells; human Technical Support handles anything about products already bought.","recent_conversation":[{"from":"user","text":"\\u0e2a\\u0e19\\u0e43\\u0e08 BM \\u0e04\\u0e23\\u0e31\\u0e1a"},{"from":"bot","text":"BM \\u0e23\\u0e32\\u0e04\\u0e32 1,100 \\u0e04\\u0e23\\u0e31\\u0e1a"},{"from":"user","text":"\\u0e42\\u0e2d\\u0e19\\u0e41\\u0e25\\u0e49\\u0e27\\u0e19\\u0e30\\u0e04\\u0e23\\u0e31\\u0e1a"},{"from":"bot","text":"\\u0e44\\u0e14\\u0e49\\u0e23\\u0e31\\u0e1a\\u0e41\\u0e25\\u0e49\\u0e27\\u0e04\\u0e23\\u0e31\\u0e1a"},{"from":"user","text":"\\u0e02\\u0e2d\\u0e1a\\u0e04\\u0e38\\u0e13\\u0e04\\u0e23\\u0e31\\u0e1a"},{"from":"bot","text":"\\u0e02\\u0e2d\\u0e1a\\u0e04\\u0e38\\u0e13\\u0e04\\u0e23\\u0e31\\u0e1a"}],"latest_customer_message":"\\u0e0b\\u0e37\\u0e49\\u0e2d\\u0e40\\u0e1f\\u0e2a\\u0e44\\u0e01\\u0e48 40 \\u0e2d\\u0e31\\u0e19\\u0e04\\u0e23\\u0e31\\u0e1a"},"questions":{"support":{"type":"noul","instructions":"Judging the LATEST customer message in context of the recent conversation: is this topic present? Post-sale issue that the shop\'s human Technical Support must handle: a problem with an account or product already bought (banned, locked, checkpoint, error, login fails, wrong password, limit not rising, card binding fails), technical how-to after purchase (setup, ads manager, pixel, campaigns), account credential checks, replacement\\/claim, or \'support hasn\'t replied\'. Also true when the latest message continues an ongoing post-sale issue from the recent conversation (follow-up answers, pasted account credentials\\/IDs\\/card numbers, \'check this\').","criteria":{"true":"Yes","false":"No"}}}}';
+
     private const FIXTURE_BUYING_BODY_JSON = '{"model":"openai\\/gpt-6-luna-decisions","state":{"shop":"Online shop chat. The bot sells; human Technical Support handles anything about products already bought.","latest_customer_message":"\\u0e0b\\u0e37\\u0e49\\u0e2d\\u0e40\\u0e1f\\u0e2a\\u0e44\\u0e01\\u0e48 40 \\u0e2d\\u0e31\\u0e19\\u0e04\\u0e23\\u0e31\\u0e1a"},"questions":{"buying":{"type":"noul","instructions":"Judging ONLY the LATEST customer message: is the customer placing or continuing a NEW purchase right now? True for: naming a product or quantity to buy (\'buy 40\', \'I want 2 sets\', \'take that one\'), confirming an order (\'confirm\'), choosing a product option before paying, asking price\\/stock in order to buy now. False when the latest message reports a problem, asks for a claim\\/replacement, asks how to use something already bought, or chases support, even if the customer bought earlier.","criteria":{"true":"Yes","false":"No"}}}}';
+
     private const FIXTURE_KB_BODY_JSON = '{"model":"openai\\/gpt-6-luna-decisions","state":{"shop":"Online shop chat. The bot sells; human Technical Support handles anything about products already bought.","latest_customer_message":"\\u0e0b\\u0e37\\u0e49\\u0e2d\\u0e40\\u0e1f\\u0e2a\\u0e44\\u0e01\\u0e48 40 \\u0e2d\\u0e31\\u0e19\\u0e04\\u0e23\\u0e31\\u0e1a"},"questions":{"kb":{"type":"noul","instructions":"Is the latest customer message a question that needs factual shop information to answer (products, prices, stock, how to use or set up, policies, warranty, documentation)? Answer No for greetings, casual talk, opinions, thanks, acknowledgements, confirmations, order placement, payment notices and short follow-ups.","criteria":{"true":"Yes","false":"No"}}}}';
+
     private const FIXTURE_KB_CTX_BODY_JSON = '{"model":"openai\\/gpt-6-luna-decisions","state":{"shop":"Online shop chat. The bot sells; human Technical Support handles anything about products already bought.","latest_customer_message":"\\u0e0b\\u0e37\\u0e49\\u0e2d\\u0e40\\u0e1f\\u0e2a\\u0e44\\u0e01\\u0e48 40 \\u0e2d\\u0e31\\u0e19\\u0e04\\u0e23\\u0e31\\u0e1a","recent_conversation":[{"from":"user","text":"\\u0e2a\\u0e19\\u0e43\\u0e08 BM \\u0e04\\u0e23\\u0e31\\u0e1a"},{"from":"bot","text":"BM \\u0e23\\u0e32\\u0e04\\u0e32 1,100 \\u0e04\\u0e23\\u0e31\\u0e1a"},{"from":"user","text":"\\u0e42\\u0e2d\\u0e19\\u0e41\\u0e25\\u0e49\\u0e27\\u0e19\\u0e30\\u0e04\\u0e23\\u0e31\\u0e1a"},{"from":"bot","text":"\\u0e44\\u0e14\\u0e49\\u0e23\\u0e31\\u0e1a\\u0e41\\u0e25\\u0e49\\u0e27\\u0e04\\u0e23\\u0e31\\u0e1a"},{"from":"user","text":"\\u0e02\\u0e2d\\u0e1a\\u0e04\\u0e38\\u0e13\\u0e04\\u0e23\\u0e31\\u0e1a"},{"from":"bot","text":"\\u0e02\\u0e2d\\u0e1a\\u0e04\\u0e38\\u0e13\\u0e04\\u0e23\\u0e31\\u0e1a"}]},"questions":{"kb":{"type":"noul","instructions":"Is the latest customer message a question that needs factual shop information to answer (products, prices, stock, how to use or set up, policies, warranty, documentation)? Answer No for greetings, casual talk, opinions, thanks, acknowledgements, confirmations, order placement, payment notices and short follow-ups.","criteria":{"true":"Yes","false":"No"}}}}';
 
     protected function setUp(): void
@@ -131,10 +134,11 @@ class SupportRouterScrubbingTest extends TestCase
             $this->assertStringContainsString('[รหัส]', $state['latest_customer_message']);
 
             if (isset($state['recent_conversation'])) {
-                // history with credentials is scrubbed too; clean bot lines untouched
+                // history with credentials is scrubbed too; clean lines untouched
                 $texts = array_column($state['recent_conversation'], 'text');
-                $this->assertContains('[รหัส]', $texts);
-                $this->assertContains('สวัสดีครับ สนใจสินค้าตัวไหนครับ', $texts);
+                $this->assertSame(2, count(array_keys($texts, '[รหัส]', true)));
+                $this->assertContains('โอนแล้วนะครับ', $texts);
+                $this->assertContains('ได้รับแล้วครับ', $texts);
                 $latestSeen++;
             }
         }
@@ -248,6 +252,7 @@ class SupportRouterScrubbingTest extends TestCase
 
     private function historyWithCredentials(): array
     {
+        // the last-6 window must contain the credential rows AND clean lines
         return [
             ...$this->history(),
             ['sender' => 'user', 'content' => 'uid|รหัส|2fa'],

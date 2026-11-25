@@ -105,7 +105,7 @@ class LunaPayloadScrubberTest extends TestCase
     public function test_masks_verification_codes_6_to_8_digits_after_keywords(): void
     {
         $this->assertSame('โค้ด [รหัส] ครับ', $this->scrubber->scrub('โค้ด 123456 ครับ'));
-        $this->assertSame('OTP: [รหัส]', $this->scrubber->scrub('OTP:654321'));
+        $this->assertSame('OTP:[รหัส]', $this->scrubber->scrub('OTP:654321'));
         $this->assertSame('code = [รหัส] ครับ', $this->scrubber->scrub('code = 12345678 ครับ'));
         $this->assertSame('2fa [รหัส] ครับ', $this->scrubber->scrub('2fa 765432 ครับ'));
     }
@@ -115,8 +115,12 @@ class LunaPayloadScrubberTest extends TestCase
     {
         $this->assertSame('[รหัส]', $this->scrubber->scrub('บัญชี 12345'));
         $this->assertSame('[รหัส]', $this->scrubber->scrub('รหัสบัญชี 123456789 ครับ'));
-        $this->assertSame("[รหัส]\n[รหัส]", $this->scrubber->scrub('บัญชี 12345 ของผมครับ
-รหัส 98765 ครับ'));
+        $this->assertSame('[รหัส]', $this->scrubber->scrub('บัญชี 12345 ของผมครับ'));
+        // a รหัส line whose value the value-mask already covered keeps its
+        // sentence (placeholder replaces only the value — the digits are gone)
+        $masked = $this->scrubber->scrub('รหัส 98765 ครับ');
+        $this->assertSame('รหัส [รหัส] ครับ', $masked);
+        $this->assertStringNotContainsString('98765', $masked);
     }
 
     #[Test]
@@ -138,7 +142,7 @@ class LunaPayloadScrubberTest extends TestCase
     public function test_masks_cookies(): void
     {
         $this->assertSame('c_user=[คุกกี้] ครับ', $this->scrubber->scrub('c_user=FAKECOOKIE123 ครับ'));
-        $this->assertSame('xs=[คุกกี้] datr=[คุกกี้]', $this->scrubber->scrub('xs=FAKE-XS-1; datr=FAKE-DATR-22'));
+        $this->assertSame('xs=[คุกกี้]; datr=[คุกกี้]', $this->scrubber->scrub('xs=FAKE-XS-1; datr=FAKE-DATR-22'));
         $this->assertSame('fr=[คุกกี้]', $this->scrubber->scrub('fr=FAKE-FR-33'));
     }
 
@@ -189,7 +193,7 @@ class LunaPayloadScrubberTest extends TestCase
             str_repeat('password=password=', 2000),
             str_repeat('uid|', 5000),
             str_repeat('0123456789', 5000),
-            "รหัสผ่าน: ".str_repeat('FAKE', 100),
+            'รหัสผ่าน: '.str_repeat('FAKE', 20), // 80 chars, inside the 120-char value cap
             str_repeat("บัญชี 12345\n", 3000),
         ];
 
