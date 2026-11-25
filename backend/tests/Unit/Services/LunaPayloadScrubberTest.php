@@ -254,4 +254,15 @@ class LunaPayloadScrubberTest extends TestCase
         $this->assertSame('bypass 12345 ครับ', $this->scrubber->scrub('bypass 12345 ครับ'));
         $this->assertSame('ช่วย pass หน่อยครับ', $this->scrubber->scrub('ช่วย pass หน่อยครับ'));
     }
+
+    #[Test]
+    public function test_postal_code_at_end_of_long_customer_sentence_is_not_nuked(): void
+    {
+        // QA round 2: with more than 24 chars before the run, the postal-code
+        // exception used a wrong window length and the whole line was nuked
+        $text = 'ส่งของไปที่บ้านเลขที่ 99/9 ซอยปลอมซอยสุขุมวิทยาวนาวี แขวงสามเสนใน เขตพญาไท กรุงเทพมหานคร รหัสไปรษณีย์ 10110 ครับ';
+
+        $this->assertGreaterThan(24, mb_strlen(mb_strstr($text, '10110', true)));
+        $this->assertSame($text, $this->scrubber->scrub($text, true));
+    }
 }

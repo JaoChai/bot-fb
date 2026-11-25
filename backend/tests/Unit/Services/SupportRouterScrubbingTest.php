@@ -356,6 +356,33 @@ class SupportRouterScrubbingTest extends TestCase
         $this->assertSame('[รหัส]', $recent[1]['text']);
     }
 
+    #[Test]
+    public function test_bot_history_lines_with_account_keyword_and_pipes_stay_byte_identical(): void
+    {
+        $bot = $this->makeBot([
+            'support_router_mode' => 'shadow',
+            'support_router_model' => 'openai/gpt-6-luna-decisions',
+        ]);
+
+        $this->fakeByQuestion(0.87, 0.95);
+
+        $botLine = 'บัญชีร้าน FAKE-BANK-1|||ค่าส่ง 16000 บาท ครับ';
+        $userLine = 'เอา 2 ตัวครับ';
+
+        app(SupportRouterService::class)->decide($bot, 'ล็อกไม่ได้ครับ', [
+            ['sender' => 'bot', 'content' => $botLine],
+            ['sender' => 'user', 'content' => $userLine],
+        ]);
+
+        $support = Http::recorded()->first(fn ($pair) => isset($pair[0]->data()['questions']['support']))[0];
+        $recent = $support->data()['state']['recent_conversation'];
+
+        // line-level rules apply to customer messages only (QA round 2):
+        // the bot line has บัญชี + ||| and must reach Luna byte-identical
+        $this->assertSame($botLine, $recent[0]['text']);
+        $this->assertSame($userLine, $recent[1]['text']);
+    }
+
     private function buyingPayload(float $noul): array
     {
         return [
