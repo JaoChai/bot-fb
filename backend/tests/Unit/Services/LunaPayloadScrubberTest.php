@@ -216,4 +216,42 @@ class LunaPayloadScrubberTest extends TestCase
         $this->assertStringNotContainsString('FAKE-PASS-123', $result);
         $this->assertStringContainsString('รหัสผ่าน: [รหัส]', $result);
     }
+
+    #[Test]
+    public function test_line_level_rules_apply_only_to_customer_messages(): void
+    {
+        // QA (seq 1464): normal bot messages must survive — bank transfer
+        // formats, postal codes, amounts and #order numbers are not credentials
+        $botTexts = [
+            'โอนเข้าบัญชี 223-3-24880-3 ยอด 16000 บาท ครับ',
+            'รหัสไปรษณีย์ 10110 ครับ',
+            'ยอดโอน 16000 บาท ครับ',
+            'เลขออเดอร์ #12345 ครับ',
+            'เปิดบัญชีใหม่วันนี้ครับ 10110',
+        ];
+
+        foreach ($botTexts as $text) {
+            $this->assertSame($text, $this->scrubber->scrub($text, false));
+        }
+    }
+
+    #[Test]
+    public function test_customer_line_rule_masks_simple_runs_but_skips_dashed_order_postal_and_amounts(): void
+    {
+        $this->assertSame('[รหัส]', $this->scrubber->scrub('บัญชี 12345 ครับ', true));
+        $this->assertSame('บัญชี 223-3-24880-3 ครับ', $this->scrubber->scrub('บัญชี 223-3-24880-3 ครับ', true));
+        $this->assertSame('รหัสออเดอร์ #12345 ครับ', $this->scrubber->scrub('รหัสออเดอร์ #12345 ครับ', true));
+        $this->assertSame('รหัสไปรษณีย์ 10110 ครับ', $this->scrubber->scrub('รหัสไปรษณีย์ 10110 ครับ', true));
+        $this->assertSame('บัญชีรับเงิน 16000 บาท ครับ', $this->scrubber->scrub('บัญชีรับเงิน 16000 บาท ครับ', true));
+    }
+
+    #[Test]
+    public function test_pass_in_space_form_is_scrubbed(): void
+    {
+        $this->assertSame('pass [รหัส]', $this->scrubber->scrub('pass FakePw1'));
+        $this->assertSame('ID 12345 pass [รหัส]', $this->scrubber->scrub('ID 12345 pass 67890'));
+        // negatives kept
+        $this->assertSame('bypass 12345 ครับ', $this->scrubber->scrub('bypass 12345 ครับ'));
+        $this->assertSame('ช่วย pass หน่อยครับ', $this->scrubber->scrub('ช่วย pass หน่อยครับ'));
+    }
 }

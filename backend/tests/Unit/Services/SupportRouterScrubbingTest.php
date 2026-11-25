@@ -332,6 +332,30 @@ class SupportRouterScrubbingTest extends TestCase
         ];
     }
 
+    #[Test]
+    public function test_line_rules_apply_to_user_history_only_not_bot_history(): void
+    {
+        $bot = $this->makeBot([
+            'support_router_mode' => 'shadow',
+            'support_router_model' => 'openai/gpt-6-luna-decisions',
+        ]);
+
+        $this->fakeByQuestion(0.87, 0.95);
+
+        app(SupportRouterService::class)->decide($bot, 'ล็อกไม่ได้ครับ', [
+            ['sender' => 'bot', 'content' => 'โอนเข้าบัญชี 223-3-24880-3 ยอด 16000 บาท ครับ'],
+            ['sender' => 'user', 'content' => 'บัญชี 12345 ครับ'],
+        ]);
+
+        $support = Http::recorded()->first(fn ($pair) => isset($pair[0]->data()['questions']['support']))[0];
+        $recent = $support->data()['state']['recent_conversation'];
+
+        // bot context lines survive untouched (QA seq 1464: over-redaction)
+        $this->assertSame('โอนเข้าบัญชี 223-3-24880-3 ยอด 16000 บาท ครับ', $recent[0]['text']);
+        // customer pasted account-like lines are masked
+        $this->assertSame('[รหัส]', $recent[1]['text']);
+    }
+
     private function buyingPayload(float $noul): array
     {
         return [
