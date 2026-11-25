@@ -95,6 +95,7 @@ class SupportRouterService
 
     public function __construct(
         private readonly OpenRouterCredentials $credentials,
+        private readonly LunaPayloadScrubber $scrubber,
     ) {}
 
     /**
@@ -126,6 +127,33 @@ class SupportRouterService
             return null;
         }
 
+        // Data hygiene: mask credential VALUES out of everything that goes to
+        // Luna (the latest message + the history, for every question body).
+        // The admin alert below (notifyAdmin) intentionally keeps the RAW
+        // latest message. Fail-safe: if the scrubber ever breaks, skip the
+        // Luna call this turn — never send raw text silently.
+        try {
+            $latestForLuna = $this->scrubber->scrub($latestMessage, true);
+            $historyForLuna = array_map(function (array $message) {
+                if (is_string($message['content'] ?? null)) {
+                    // line-level rules apply to customer messages only
+                    $message['content'] = $this->scrubber->scrub(
+                        $message['content'],
+                        ($message['sender'] ?? '') === 'user',
+                    );
+                }
+
+                return $message;
+            }, $history);
+        } catch (\Throwable $e) {
+            Log::warning('Support router: payload scrub failed, skipping Luna call this turn', [
+                'bot_id' => $bot->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+
         $startedAt = microtime(true);
 
         $timeout = (int) config('services.openrouter.support_router_timeout', 5);
@@ -135,15 +163,15 @@ class SupportRouterService
         $kbShadow = (bool) config('services.openrouter.support_router_kb_shadow', false);
 
         try {
-            $responses = Http::pool(function (Pool $pool) use ($headers, $history, $kbShadow, $latestMessage, $model, $timeout, $url) {
+            $responses = Http::pool(function (Pool $pool) use ($headers, $historyForLuna, $kbShadow, $latestForLuna, $model, $timeout, $url) {
                 $requests = [
-                    'support' => $pool->as('support')->timeout($timeout)->withHeaders($headers)->post($url, $this->supportBody($model, $latestMessage, $history)),
-                    'buying' => $pool->as('buying')->timeout($timeout)->withHeaders($headers)->post($url, $this->buyingBody($model, $latestMessage)),
+                    'support' => $pool->as('support')->timeout($timeout)->withHeaders($headers)->post($url, $this->supportBody($model, $latestForLuna, $historyForLuna)),
+                    'buying' => $pool->as('buying')->timeout($timeout)->withHeaders($headers)->post($url, $this->buyingBody($model, $latestForLuna)),
                 ];
 
                 if ($kbShadow) {
-                    $requests['kb'] = $pool->as('kb')->timeout($timeout)->withHeaders($headers)->post($url, $this->kbBody($model, $latestMessage));
-                    $requests['kb_ctx'] = $pool->as('kb_ctx')->timeout($timeout)->withHeaders($headers)->post($url, $this->kbCtxBody($model, $latestMessage, $history));
+                    $requests['kb'] = $pool->as('kb')->timeout($timeout)->withHeaders($headers)->post($url, $this->kbBody($model, $latestForLuna));
+                    $requests['kb_ctx'] = $pool->as('kb_ctx')->timeout($timeout)->withHeaders($headers)->post($url, $this->kbCtxBody($model, $latestForLuna, $historyForLuna));
                 }
 
                 return $requests;
@@ -211,8 +239,9 @@ class SupportRouterService
     /**
      * The support request — EXACTLY the body sent before the buy gate existed
      * (same state, same QUESTION constant, same answers.support.noul path).
+     * The payload (latest + history) is already scrubbed by the caller.
      *
-     * @param  array<int, array{sender: string, content: string}>  $history
+     * @param  array<int, array{sender: string, content: string}>  $history  already scrubbed
      * @return array<string, mixed>
      */
     private function supportBody(string $model, string $latestMessage, array $history): array
