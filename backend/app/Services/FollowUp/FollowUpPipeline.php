@@ -414,10 +414,17 @@ class FollowUpPipeline
         // (ข้อความลูกค้า — บทเรียน #346) 'B:'/'A:' ใช้กฎ value เท่านั้น
         try {
             foreach ($snapshot as $index => $line) {
-                $snapshot[$index] = $this->scrubber->scrub(
-                    $line,
-                    str_starts_with($line, 'C:'),
-                );
+                $isCustomer = str_starts_with($line, 'C:');
+                $scrubbed = $this->scrubber->scrub($line, $isCustomer);
+
+                // QA round 2: เมื่อข้อความลูกค้าโดน nuke ทั้งบรรทัด prefix 'C: ' หาย —
+                // previewText (การ์ดแอดมิน) จะข้ามบรรทัดล่าสุด และ Luna เห็นบรรทัด
+                // ไม่มีป้ายผู้พูด จึงคืน prefix ทุกครั้งที่ผลไม่ขึ้นต้นด้วย 'C: '
+                if ($isCustomer && ! str_starts_with($scrubbed, 'C:')) {
+                    $scrubbed = 'C: '.$scrubbed;
+                }
+
+                $snapshot[$index] = $scrubbed;
             }
         } catch (\Throwable $scrubFailure) {
             // fail-closed เดิมของเส้นทางนี้: คืน null = แถวถูก exclude ก่อนเรียก Luna
