@@ -123,7 +123,7 @@ class LunaPayloadScrubber
         foreach ($matches[1] as [$run, $offset]) {
             $after = $offset + strlen($run);
             $charOffset = mb_strlen(substr($analysis, 0, $offset));
-            $before = mb_substr($analysis, max(0, $charOffset - 24), max(0, $charOffset));
+            $before = mb_substr($analysis, max(0, $charOffset - 24), min(24, $charOffset));
 
             if (preg_match('/ไปรษณีย์\s*$/u', $before) === 1) {
                 continue; // postal code
