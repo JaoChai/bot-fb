@@ -118,6 +118,41 @@ class FollowUpContextScrubTest extends TestCase
         ];
     }
 
+    #[Test]
+    public function test_bot_history_line_with_account_keyword_and_pipes_stays_byte_identical(): void
+    {
+        $bot = $this->seedBot();
+        $room = Conversation::factory()->line()->create(['bot_id' => $bot->id, 'external_customer_id' => 'USCRUB5']);
+        $botLine = 'บัญชีร้าน FAKE-BANK-1|||ค่าส่ง 16000 บาท ครับ';
+        $this->addMessage($room->id, 'bot', '2026-11-20 10:00:00', $botLine);
+        $this->addMessage($room->id, 'user', '2026-11-20 10:01:00', 'สนใจครับ ราคา 1,600');
+        $log = $this->candidateRow($room->id, $bot->id, '2026-11-19 00:00:00', 2);
+
+        $lines = app(FollowUpPipeline::class)->contextLines($log);
+
+        // กฎระดับบรรทัดใช้กับข้อความลูกค้า ('C:') เท่านั้น — บรรทัดบอทต้องถึง
+        // Luna ไบต์เดิม แม้มี keyword บัญชี + ||| + เลขบัญชีรูปแบบมีขีด (FAKE-BANK-1)
+        $this->assertSame('B: '.$botLine, $lines[0]);
+        $this->assertSame('C: สนใจครับ ราคา 1,600', $lines[1]);
+    }
+
+    #[Test]
+    public function test_nuked_customer_line_keeps_c_prefix(): void
+    {
+        $bot = $this->seedBot();
+        $room = Conversation::factory()->line()->create(['bot_id' => $bot->id, 'external_customer_id' => 'USCRUB6']);
+        // เลข 6 หลัก + keyword บัญชี: โดนกฎระดับบรรทัด (nuke ทั้งบรรทัด) แต่
+        // detector/redactor เดิมไม่จับ (ไม่มี pipe, ไม่มี label, <10 หลัก)
+        $this->addMessage($room->id, 'user', '2026-11-20 10:00:00', 'บัญชีออมทรัพย์ 654321 ครับ');
+        $log = $this->candidateRow($room->id, $bot->id, '2026-11-19 00:00:00', 1);
+
+        $lines = app(FollowUpPipeline::class)->contextLines($log);
+
+        // QA round 2: บรรทัดที่โดน nuke ทั้งบรรทัดต้องคง prefix 'C: ' — ไม่งั้น
+        // previewText ข้ามบรรทัดล่าสุด และ Luna/โมเดลร่างเห็นบรรทัดไม่มีป้ายผู้พูด
+        $this->assertSame(['C: [รหัส]'], $lines);
+    }
+
     private function seedBot(array $botAttributes = []): Bot
     {
         $user = User::factory()->create();
