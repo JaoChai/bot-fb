@@ -4,6 +4,7 @@ namespace App\Services\FollowUp;
 
 use App\Models\FollowUpApproval;
 use App\Models\LeadRecoveryLog;
+use App\Services\SupportRouter\LunaPayloadScrubber;
 use App\Support\FollowUpRedactor;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -44,6 +45,7 @@ class FollowUpPipeline
         private readonly FollowUpDraftService $drafts,
         private readonly FollowUpReservationService $reservations,
         private readonly FollowUpAutomaticRule $autoRule,
+        private readonly LunaPayloadScrubber $scrubber,
     ) {}
 
     public function prepare(int $logId, ?CarbonImmutable $now = null): void
@@ -398,7 +400,44 @@ class FollowUpPipeline
             ])
             ->all();
 
-        return FollowUpRedactor::snapshot($messages);
+        $snapshot = FollowUpRedactor::snapshot($messages);
+
+        if ($snapshot === null) {
+            return null;
+        }
+
+        // อนุมัติ 25 พ.ย.: ผ่าน LunaPayloadScrubber บนบรรทัดที่ snapshot คืน (ก่อน
+        // ส่งให้ Luna Decisions) — ปิดช่องประเภทที่ redactor ไม่จับ (EAA token,
+        // base32 ล้วน, โค้ด/OTP 6 หลัก, cookie datr/fr) โดย D30 เดิมคงเดิม:
+        // บรรทัดที่ detector จับว่ามี account data ยังคืน null = exclude ก่อน
+        // เรียก Luna ทุกครั้ง · กฎ value ใช้กับทุกฝ่าย, กฎระดับบรรทัดเฉพาะ 'C:'
+        // (ข้อความลูกค้า — บทเรียน #346) 'B:'/'A:' ใช้กฎ value เท่านั้น
+        try {
+            foreach ($snapshot as $index => $line) {
+                $isCustomer = str_starts_with($line, 'C:');
+                $scrubbed = $this->scrubber->scrub($line, $isCustomer);
+
+                // QA round 2: เมื่อข้อความลูกค้าโดน nuke ทั้งบรรทัด prefix 'C: ' หาย —
+                // previewText (การ์ดแอดมิน) จะข้ามบรรทัดล่าสุด และ Luna เห็นบรรทัด
+                // ไม่มีป้ายผู้พูด จึงคืน prefix ทุกครั้งที่ผลไม่ขึ้นต้นด้วย 'C: '
+                if ($isCustomer && ! str_starts_with($scrubbed, 'C:')) {
+                    $scrubbed = 'C: '.$scrubbed;
+                }
+
+                $snapshot[$index] = $scrubbed;
+            }
+        } catch (\Throwable $scrubFailure) {
+            // fail-closed เดิมของเส้นทางนี้: คืน null = แถวถูก exclude ก่อนเรียก Luna
+            // ห้ามส่งข้อความดิบออกนอกระบบในทางเงียบ — log แค่ log_id + ชนิด exception
+            Log::warning('Follow-up context scrub failed; excluding this round', [
+                'log_id' => $log->id,
+                'exception_type' => $scrubFailure::class,
+            ]);
+
+            return null;
+        }
+
+        return $snapshot;
     }
 
     /** กฎความล้มเหลว (D33): +1 ครั้ง — ยังไม่ครบ 3 = sort_retry เว้น 30 นาที, ครบ = excluded */
