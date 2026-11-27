@@ -9,6 +9,7 @@ use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Services\Guardrail\GuardrailOutputSanitizer;
+use App\Services\Guardrail\LeakTailGuard;
 use App\Services\Guardrail\OffTopicCircuitBreaker;
 use App\Services\Guardrail\OffTopicSignalExtractor;
 use App\Services\Payment\OrderPayloadExtractor;
@@ -33,6 +34,7 @@ class AIService
         private readonly OffTopicSignalExtractor $offTopicSignal,
         private readonly OffTopicCircuitBreaker $offTopicCircuitBreaker,
         private readonly GuardrailOutputSanitizer $outputSanitizer,
+        private readonly LeakTailGuard $leakTailGuard,
         private readonly VipPriceGuardService $vipPriceGuard,
         private readonly SupportRouterService $supportRouter,
         private readonly OutageNoticeService $outageNotice,
@@ -218,6 +220,57 @@ class AIService
             $result['order_payload'] = null;
         }
 
+        // ตัดหางความคิดหลุด ('เครดิตฟรี' + เศษ ASCII ท้ายกล่อง) — กติกาตายตัว ไม่เรียกโมเดล
+        // วางถัดจาก sanitizer เพื่อครอบทุกคำตอบที่ผ่านจุดนี้ รวมที่ VIP price guard สร้างใหม่
+        // คำตอบที่ไม่เข้ากติกาต้องออกไบต์เดิมทุกไบต์ (LeakTailGuard ไม่แตะ)
+        // fail-safe: ตัวตัดพังก็ต้องส่งคำตอบเดิมไบต์เดิม — ห้ามทำให้ลูกค้าไม่ได้คำตอบ
+        // (job จับแค่ OpenRouterException และ tries=1)
+        $delimiter = (string) ($bot->settings?->multiple_bubbles_delimiter ?? '');
+        try {
+            $leakGuard = $this->leakTailGuard->guard(
+                content: (string) ($result['content'] ?? ''),
+                userMessage: $userMessage,
+                history: $history,
+                delimiter: $delimiter !== '' ? $delimiter : '|||',
+            );
+        } catch (\Throwable $e) {
+            // log เฉพาะ id + ชนิด exception — ห้ามใส่ข้อความ exception เพราะอาจแต้มเนื้อหา
+            Log::warning('Leak tail guard error', [
+                'bot_id' => $bot->id,
+                'conversation_id' => $conversation?->id,
+                'event' => 'guard_error',
+                'exception' => get_class($e),
+            ]);
+            $leakGuard = ['content' => (string) ($result['content'] ?? ''), 'events' => []];
+        }
+        $result['content'] = $leakGuard['content'];
+        if ($leakGuard['events'] !== []) {
+            foreach (array_unique($leakGuard['events']) as $event) {
+                // log เฉพาะ id + ชนิดเหตุการณ์ — ห้าม log เนื้อหาข้อความ
+                Log::warning('Leak tail guard event', [
+                    'bot_id' => $bot->id,
+                    'conversation_id' => $conversation?->id,
+                    'event' => $event,
+                ]);
+            }
+            $result['leak_guard'] = in_array(LeakTailGuard::EVENT_STRIPPED, $leakGuard['events'], true)
+                ? LeakTailGuard::EVENT_STRIPPED
+                : $leakGuard['events'][0];
+        }
+
+        // วัดก่อน ไม่เปลี่ยนพฤติกรรม — จบไม่ปกติ = เสี่ยงความคิดหลุดเข้าช่อง content:
+        // log ไว้นับความถี่ ยังไม่ retry และไม่บล็อกคำตอบ (ตัดสินใจรอบหลังจากข้อมูลจริง)
+        $finishReason = $result['finish_reason'] ?? null;
+        if (is_string($finishReason) && $finishReason !== '' && $finishReason !== 'stop') {
+            Log::warning('LLM finish_reason not stop', [
+                'bot_id' => $bot->id,
+                'conversation_id' => $conversation?->id,
+                'model' => $result['model'] ?? null,
+                'finish_reason' => $finishReason,
+                'generation_id' => $result['id'] ?? null,
+            ]);
+        }
+
         // Ensure usage key exists with defaults (some models may not return usage data)
         if (! isset($result['usage'])) {
             $result['usage'] = [
@@ -359,6 +412,16 @@ class AIService
             if (! empty($result['support_router'])) {
                 $metadata['support_router'] = $result['support_router'];
             }
+            // ธงตัวตัดหางความคิดหลุด (stripped / mid_sentence / would_empty) — นับจาก DB ภายหลังได้
+            if (! empty($result['leak_guard'])) {
+                $metadata['leak_guard'] = $result['leak_guard'];
+            }
+            // หลักฐานการเรียกโมเดล — เคส finish_reason ผิดปกติเปิดข้อความดิบใน OpenRouter
+            // ตาม id นี้ได้ (cache / circuit breaker / support_router ไม่มีค่า → null ไม่พัง)
+            $metadata['llm'] = [
+                'generation_id' => $result['id'] ?? null,
+                'finish_reason' => $result['finish_reason'] ?? null,
+            ];
             if ($metadata !== []) {
                 $messageData['metadata'] = $metadata;
             }
