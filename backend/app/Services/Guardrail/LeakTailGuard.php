@@ -79,6 +79,16 @@ class LeakTailGuard
                 continue;
             }
 
+            $before = mb_substr($bubble, 0, $pos);
+            // กันการกลับความหมาย: 'ตอนนี้ไม่มีเครดิตฟรี' ตัดแล้วเป็น 'ตอนนี้ไม่มี' = ความหมายกลับ
+            // คำปฏิเสธนำหน้า (ช่องว่างคั่นได้) → ถือเป็นกลางประโยค ห้ามแก้
+            if (preg_match('/(?:ไม่มี|ไม่ได้|ไม่เคย|ไม่ใช่|ไม่ครับ|ไม่ค่ะ)\s*$/u', $before) === 1) {
+                $events[] = self::EVENT_MID_SENTENCE;
+                $kept[] = $bubble;
+
+                continue;
+            }
+
             $tail = mb_substr($bubble, $pos + mb_strlen(self::TRIGGER));
             if (preg_match('/[^\x00-\x7F]/', $tail) === 1) {
                 // หลังคำมีอักขระไม่ใช่ ASCII (ไทย/อีโมจิ) ต่อ = กลางประโยค → ห้ามแก้
