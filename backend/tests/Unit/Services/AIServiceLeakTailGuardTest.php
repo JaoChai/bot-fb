@@ -3,6 +3,7 @@
 namespace Tests\Unit\Services;
 
 use App\Models\Bot;
+use App\Models\BotSetting;
 use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
@@ -187,7 +188,7 @@ class AIServiceLeakTailGuardTest extends TestCase
         // bot_settings.multiple_bubbles_delimiter = '' (validator string|max:10 อนุญาต) —
         // เดิม ?? '|||' กันแค่ null ทำให้ explode() โยน ValueError หลุดออกจาก generateResponse
         [$bot, $conversation] = $this->makeBotWithConversation();
-        \App\Models\BotSetting::updateOrCreate(['bot_id' => $bot->id], ['multiple_bubbles_delimiter' => '']);
+        BotSetting::updateOrCreate(['bot_id' => $bot->id], ['multiple_bubbles_delimiter' => '']);
         $bot->refresh();
         $this->mockRagResult(['content' => 'รับทราบครับพี่ เครดิตฟรี']);
 

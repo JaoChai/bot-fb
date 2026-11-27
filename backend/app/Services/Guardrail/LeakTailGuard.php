@@ -90,7 +90,10 @@ class LeakTailGuard
             }
 
             $tail = mb_substr($bubble, $pos + mb_strlen(self::TRIGGER));
-            if (preg_match('/[^\x00-\x7F]/', $tail) === 1) {
+            // ช่องว่างยูนิโคด (NBSP, ideographic space, \p{Z}, \s) นับเป็นส่วนของหาง
+            // ไม่ใช่สัญญาณกลางประโยค — ตัดออกก่อนเช็คว่าเหลืออักขระนอก ASCII หรือไม่
+            $tailCore = (string) preg_replace('/[\p{Z}\s]/u', '', $tail);
+            if (preg_match('/[^\x00-\x7F]/', $tailCore) === 1) {
                 // หลังคำมีอักขระไม่ใช่ ASCII (ไทย/อีโมจิ) ต่อ = กลางประโยค → ห้ามแก้
                 $events[] = self::EVENT_MID_SENTENCE;
                 $kept[] = $bubble;
@@ -98,7 +101,8 @@ class LeakTailGuard
                 continue;
             }
 
-            $stripped = rtrim(mb_substr($bubble, 0, $pos));
+            // trim รวมช่องว่างยูนิโคด (rtrim ธรรมดาไม่ตัด NBSP/ideographic space)
+            $stripped = (string) preg_replace('/[\p{Z}\s]+$/u', '', mb_substr($bubble, 0, $pos));
             if ($stripped !== '') {
                 $kept[] = $stripped;
             }
