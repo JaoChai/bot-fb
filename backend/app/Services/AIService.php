@@ -223,12 +223,26 @@ class AIService
         // ตัดหางความคิดหลุด ('เครดิตฟรี' + เศษ ASCII ท้ายกล่อง) — กติกาตายตัว ไม่เรียกโมเดล
         // วางถัดจาก sanitizer เพื่อครอบทุกคำตอบที่ผ่านจุดนี้ รวมที่ VIP price guard สร้างใหม่
         // คำตอบที่ไม่เข้ากติกาต้องออกไบต์เดิมทุกไบต์ (LeakTailGuard ไม่แตะ)
-        $leakGuard = $this->leakTailGuard->guard(
-            content: (string) ($result['content'] ?? ''),
-            userMessage: $userMessage,
-            history: $history,
-            delimiter: $bot->settings?->multiple_bubbles_delimiter ?? '|||',
-        );
+        // fail-safe: ตัวตัดพังก็ต้องส่งคำตอบเดิมไบต์เดิม — ห้ามทำให้ลูกค้าไม่ได้คำตอบ
+        // (job จับแค่ OpenRouterException และ tries=1)
+        $delimiter = (string) ($bot->settings?->multiple_bubbles_delimiter ?? '');
+        try {
+            $leakGuard = $this->leakTailGuard->guard(
+                content: (string) ($result['content'] ?? ''),
+                userMessage: $userMessage,
+                history: $history,
+                delimiter: $delimiter !== '' ? $delimiter : '|||',
+            );
+        } catch (\Throwable $e) {
+            // log เฉพาะ id + ชนิด exception — ห้ามใส่ข้อความ exception เพราะอาจแต้มเนื้อหา
+            Log::warning('Leak tail guard error', [
+                'bot_id' => $bot->id,
+                'conversation_id' => $conversation?->id,
+                'event' => 'guard_error',
+                'exception' => get_class($e),
+            ]);
+            $leakGuard = ['content' => (string) ($result['content'] ?? ''), 'events' => []];
+        }
         $result['content'] = $leakGuard['content'];
         if ($leakGuard['events'] !== []) {
             foreach (array_unique($leakGuard['events']) as $event) {

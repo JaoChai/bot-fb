@@ -46,6 +46,11 @@ class LeakTailGuard
      */
     public function guard(string $content, string $userMessage, array $history = [], string $delimiter = '|||'): array
     {
+        // fail-safe: ตัวคั่นว่างทำให้ explode() โยน ValueError — ใช้ค่าเริ่มต้นแทน
+        if ($delimiter === '') {
+            $delimiter = '|||';
+        }
+
         if ($content === '' || mb_strpos($content, self::TRIGGER) === false) {
             return ['content' => $content, 'events' => []];
         }
