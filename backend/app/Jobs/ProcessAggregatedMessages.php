@@ -560,6 +560,14 @@ class ProcessAggregatedMessages implements ShouldQueue
                     // เก็บไว้ตรวจย้อนหลังว่า guard ไปแก้คำตอบอะไรของบอทบ้าง
                     'stock_guard' => $result['stock_guard'] ?? null,
                     'support_router' => $result['support_router'] ?? null,
+                    // ธงตัวตัดหางความคิดหลุด (stripped / mid_sentence / would_empty)
+                    'leak_guard' => $result['leak_guard'] ?? null,
+                    // หลักฐานการเรียกโมเดล — เคส finish_reason ผิดปกติเปิดข้อความดิบใน
+                    // OpenRouter ตาม generation_id ได้ (cache/router ไม่มีค่า → null)
+                    'llm' => [
+                        'generation_id' => $result['id'] ?? null,
+                        'finish_reason' => $result['finish_reason'] ?? null,
+                    ],
                 ]) ?: null,
             ]);
         }, $currentTurnMessageIds);
