@@ -33,14 +33,16 @@ class LeakTailGuard
     private const CUSTOMER_CONDITION = 'เครดิต';
 
     public const EVENT_STRIPPED = 'stripped';
+
     public const EVENT_MID_SENTENCE = 'mid_sentence';
+
     public const EVENT_WOULD_EMPTY = 'would_empty';
 
     /**
      * @param  string  $userMessage  ข้อความลูกค้ารอบนี้ (ก่อน merge ก็ได้ — ตรวจแบบ substring)
      * @param  array<int, array{sender: string, content: string}>  $history  ประวัติที่ส่งให้โมเดล
      * @param  string  $delimiter  ตัวคั่น multiple bubbles ของบอท (ค่าเริ่มต้น '|||')
-     * @return array{content: string, events: array<int, string>}  events = ชนิดเหตุการณ์ (ซ้ำซ้อนตัดออกโดยผู้เรียก)
+     * @return array{content: string, events: array<int, string>} events = ชนิดเหตุการณ์ (ซ้ำซ้อนตัดออกโดยผู้เรียก)
      */
     public function guard(string $content, string $userMessage, array $history = [], string $delimiter = '|||'): array
     {
