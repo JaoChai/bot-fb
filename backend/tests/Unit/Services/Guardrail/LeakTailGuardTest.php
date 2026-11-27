@@ -232,4 +232,17 @@ class LeakTailGuardTest extends TestCase
         $this->assertSame('รับทราบครับพี่', $result['content']);
         $this->assertSame([LeakTailGuard::EVENT_STRIPPED], $result['events']);
     }
+
+    #[Test]
+    public function trims_unicode_whitespace_around_the_cut(): void
+    {
+        // NBSP (U+00A0) และ ideographic space (U+3000) ไม่ใช่ ASCII แต่เป็นช่องว่าง —
+        // ต้องถือว่าเป็นส่วนของหางที่ตัดได้ และ trim ท้ายส่วนที่เก็บให้สะอาดด้วย
+        $original = "รับทราบครับพี่\u{00A0} เครดิตฟรี\u{00A0}\u{3000}";
+
+        $result = $this->guard($original);
+
+        $this->assertSame('รับทราบครับพี่', $result['content']);
+        $this->assertSame([LeakTailGuard::EVENT_STRIPPED], $result['events']);
+    }
 }
