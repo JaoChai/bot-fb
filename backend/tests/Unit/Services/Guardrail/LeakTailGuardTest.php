@@ -177,4 +177,14 @@ class LeakTailGuardTest extends TestCase
         $this->assertSame('', $result['content']);
         $this->assertSame([], $result['events']);
     }
+
+    #[Test]
+    public function empty_delimiter_falls_back_to_default_instead_of_throwing(): void
+    {
+        // fail-safe: explode('', $x) โยน ValueError — ตัวคั่นว่างต้องถูกแทนด้วย '|||'
+        $result = $this->guard('รับทราบครับพี่ เครดิตฟรี', delimiter: '');
+
+        $this->assertSame('รับทราบครับพี่', $result['content']);
+        $this->assertSame([LeakTailGuard::EVENT_STRIPPED], $result['events']);
+    }
 }

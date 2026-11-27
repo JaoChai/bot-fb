@@ -7,6 +7,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\AIService;
+use App\Services\Guardrail\LeakTailGuard;
 use App\Services\RAGService;
 use App\Services\StockGuardService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -178,5 +179,46 @@ class AIServiceLeakTailGuardTest extends TestCase
         app(AIService::class)->generateResponse($bot, 'BM ราคาเท่าไหร่ครับ', $conversation);
 
         Log::shouldNotHaveReceived('warning');
+    }
+
+    #[Test]
+    public function empty_delimiter_in_bot_settings_still_strips_without_crashing(): void
+    {
+        // bot_settings.multiple_bubbles_delimiter = '' (validator string|max:10 อนุญาต) —
+        // เดิม ?? '|||' กันแค่ null ทำให้ explode() โยน ValueError หลุดออกจาก generateResponse
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        \App\Models\BotSetting::updateOrCreate(['bot_id' => $bot->id], ['multiple_bubbles_delimiter' => '']);
+        $bot->refresh();
+        $this->mockRagResult(['content' => 'รับทราบครับพี่ เครดิตฟรี']);
+
+        $result = app(AIService::class)->generateResponse($bot, 'ครับ', $conversation);
+
+        $this->assertSame('รับทราบครับพี่', $result['content']);
+        $this->assertSame('stripped', $result['leak_guard']);
+    }
+
+    #[Test]
+    public function guard_exception_returns_original_bytes_and_logs_error_event(): void
+    {
+        // fail-safe: ตัวตัดพัง → ลูกค้าต้องได้คำตอบเดิมไบต์เดิม + log (ห้ามใส่ข้อความ exception
+        // ใน log เพราะอาจแต้มเนื้อหา)
+        [$bot, $conversation] = $this->makeBotWithConversation();
+        $original = 'รับทราบครับพี่ เครดิตฟรี';
+        $this->mockRagResult(['content' => $original]);
+        $this->mock(LeakTailGuard::class, function ($m) {
+            $m->shouldReceive('guard')->once()->andThrow(new \RuntimeException('synthetic boom'));
+        });
+        Log::spy();
+
+        $result = app(AIService::class)->generateResponse($bot, 'ครับ', $conversation);
+
+        $this->assertSame($original, $result['content']);
+        $this->assertArrayNotHasKey('leak_guard', $result);
+        Log::shouldHaveReceived('warning')->with('Leak tail guard error', [
+            'bot_id' => $bot->id,
+            'conversation_id' => $conversation->id,
+            'event' => 'guard_error',
+            'exception' => \RuntimeException::class,
+        ])->once();
     }
 }
