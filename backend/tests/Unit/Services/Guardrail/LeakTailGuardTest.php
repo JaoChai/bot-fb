@@ -136,6 +136,51 @@ class LeakTailGuardTest extends TestCase
     }
 
     #[Test]
+    public function negation_word_before_trigger_is_left_untouched_no_mee(): void
+    {
+        // กันการกลับความหมาย: 'ตอนนี้ไม่มีเครดิตฟรี' ตัดแล้วเป็น 'ตอนนี้ไม่มี' = ความหมายกลับ
+        $original = 'ตอนนี้ไม่มีเครดิตฟรี';
+
+        $result = $this->guard($original);
+
+        $this->assertSame($original, $result['content']);
+        $this->assertSame([LeakTailGuard::EVENT_MID_SENTENCE], $result['events']);
+    }
+
+    #[Test]
+    public function negation_word_before_trigger_is_left_untouched_with_polite_particle(): void
+    {
+        $original = 'ไม่มีเครดิตฟรีครับ';
+
+        $result = $this->guard($original);
+
+        $this->assertSame($original, $result['content']);
+        $this->assertSame([LeakTailGuard::EVENT_MID_SENTENCE], $result['events']);
+    }
+
+    #[Test]
+    public function negation_word_mai_dai_before_trigger_is_left_untouched(): void
+    {
+        $original = 'ไม่ได้เครดิตฟรี';
+
+        $result = $this->guard($original);
+
+        $this->assertSame($original, $result['content']);
+        $this->assertSame([LeakTailGuard::EVENT_MID_SENTENCE], $result['events']);
+    }
+
+    #[Test]
+    public function negation_word_with_space_before_trigger_is_left_untouched(): void
+    {
+        $original = 'ไม่มี เครดิตฟรี';
+
+        $result = $this->guard($original);
+
+        $this->assertSame($original, $result['content']);
+        $this->assertSame([LeakTailGuard::EVENT_MID_SENTENCE], $result['events']);
+    }
+
+    #[Test]
     public function protects_bubble_containing_bat_kredit(): void
     {
         // ห้ามแตะ 'บัตรเครดิต' — กล่องที่มีคำนี้ถูกข้ามทั้งกล่อง (ไม่ตัด ไม่ถือเป็นกลางประโยค)
