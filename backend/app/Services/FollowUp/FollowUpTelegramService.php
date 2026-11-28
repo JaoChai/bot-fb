@@ -117,14 +117,14 @@ class FollowUpTelegramService
 
     /**
      * ข้อความแจ้งเจ้านายหลังส่งข้อความตามลูกค้าเอง (A5 / การ์ด B2) — คำตายตามการ์ด ห้ามปุ่ม ห้ามแก้ลอยๆ
-     * บรรทัดกลุ่ม/ลูกค้า/URL ยืมคำและกฎจาก STRINGS ข้างบน (label กลุ่ม, ชื่อลูกค้าผ่าน redactor, fallback ห้อง)
+     * บรรทัดกลุ่ม/ลูกค้า ยืมคำและกฎจาก STRINGS ข้างบน (label กลุ่ม, ชื่อลูกค้าผ่าน redactor, fallback ห้อง)
+     * ไม่มีบรรทัด "เปิดห้อง: {url}" — เจ้านายสั่งตัดออกจากข้อความแจ้งอัตโนมัติ (27 พ.ย.); บัตรร่างมีปุ่มยังใช้ STRINGS['room_line']
      */
     private const AUTOMATIC_NOTICE_STRINGS = [
         'title' => 'ส่งข้อความตามลูกค้าอัตโนมัติแล้ว',
         'customer_line' => 'ลูกค้า: {customer}',
         'group_line' => 'กลุ่ม: {group_label} · มั่นใจ {percent}%',
         'sent_heading' => 'ข้อความที่ส่ง:',
-        'room_line' => 'เปิดห้อง: {url}',
     ];
 
     /** ข้อความแจ้งอัตโนมัติ: ชื่อ log line ต่อการ publish หนึ่งครั้ง */
@@ -391,6 +391,7 @@ class FollowUpTelegramService
     /**
      * ประกอบข้อความแจ้ง (B2) — คำตายตาม AUTOMATIC_NOTICE_STRINGS, dynamic ทุกตัว escape
      * ข้อความที่ส่งเอาทั้งฉบับตามที่ freeze ไว้ ไม่ตัด ไม่มี preview ลูกค้า
+     * ไม่มีบรรทัดลิงก์ห้อง — เจ้านายสั่งตัดออก (27 พ.ย.); บัตรร่างมีปุ่มยังส่งลิงก์ตาม STRINGS['room_line']
      */
     private function renderAutomaticNotice(object $log, Bot $bot): string
     {
@@ -398,8 +399,6 @@ class FollowUpTelegramService
         $customer = $this->customerValue($log);
         $label = self::STRINGS['group_labels'][(string) $log->group_code] ?? self::STRINGS['group_label_other'];
         $percent = intdiv((int) round((float) $log->group_confidence * 10000), 100);
-        $roomUrl = rtrim((string) config('customer_follow_up.admin_web_url'), '/')
-            .'/chat?botId='.$bot->id.'&conversationId='.$log->conversation_id;
 
         $lines = [];
         $lines[] = $s['title'];
@@ -413,7 +412,6 @@ class FollowUpTelegramService
         );
         $lines[] = $s['sent_heading'];
         $lines[] = TelegramAlertBotService::esc((string) $log->message_sent);
-        $lines[] = str_replace('{url}', TelegramAlertBotService::esc($roomUrl), $s['room_line']);
 
         return implode("\n", $lines);
     }
