@@ -1336,7 +1336,8 @@ TEXT;
         $decoded = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
         $redactedName = trim((string) preg_replace('/\s+/u', ' ', FollowUpRedactor::redact($hostile)));
         self::assertStringContainsString('ลูกค้า: '.$redactedName."\n", $decoded);
-        self::assertStringContainsString('ข้อความที่ส่ง:'."\n".$hostile."\nบรรทัดสอง"."\n", $decoded);
+        // หลังตัดบรรทัด "เปิดห้อง:" ท้ายข้อความแจ้ง (27 พ.ย.) — 'บรรทัดสอง' เป็นบรรทัดสุดท้าย
+        self::assertStringContainsString('ข้อความที่ส่ง:'."\n".$hostile."\nบรรทัดสอง", $decoded);
     }
 
     /** ลูกค้าไร้ชื่อ = บรรทัด fallback หมายเลขห้อง — กฎเดียวกับการ์ด */
