@@ -340,7 +340,7 @@ class FollowUpTelegramService
             return $this->finish($approvalId, $logId, $botId, 'busy', 'telegram_claim_refused', null, self::NOTICE_LOG_MESSAGE);
         }
 
-        $html = $this->renderAutomaticNotice($log, $bot);
+        $html = $this->renderAutomaticNotice($log);
         $outcome = $this->telegram->sendFollowUpCard(
             (string) ($plugin->config['access_token'] ?? ''),
             $chatId,
@@ -393,7 +393,7 @@ class FollowUpTelegramService
      * ข้อความที่ส่งเอาทั้งฉบับตามที่ freeze ไว้ ไม่ตัด ไม่มี preview ลูกค้า
      * ไม่มีบรรทัดลิงก์ห้อง — เจ้านายสั่งตัดออก (27 พ.ย.); บัตรร่างมีปุ่มยังส่งลิงก์ตาม STRINGS['room_line']
      */
-    private function renderAutomaticNotice(object $log, Bot $bot): string
+    private function renderAutomaticNotice(object $log): string
     {
         $s = self::AUTOMATIC_NOTICE_STRINGS;
         $customer = $this->customerValue($log);
