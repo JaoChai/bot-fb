@@ -87,7 +87,7 @@ TEXT;
 เปิดห้อง: https://admin.example.test/chat?botId=26&amp;conversationId=1317
 TEXT;
 
-    /** ข้อความแจ้งเจ้านายหลังส่งเอง (B2) — คำตายตามการ์ด, dynamic หลุดเป็น entity หมด */
+    /** ข้อความแจ้งเจ้านายหลังส่งเอง (B2) — คำตายตามการ์ด, dynamic หลุดเป็น entity หมด (ไม่มีบรรทัดลิงก์ห้องตามคำสั่งเจ้านาย 27 พ.ย.) */
     private const GOLDEN_NOTICE_TEXT = <<<'TEXT'
 ส่งข้อความตามลูกค้าอัตโนมัติแล้ว
 ลูกค้า: สมชาย &lt;ร้าน A&amp;B&gt;
@@ -95,7 +95,6 @@ TEXT;
 ข้อความที่ส่ง:
 สวัสดีครับพี่ เมื่อวานที่คุยเรื่องบัญชีโฆษณาไว้
 มีจุดไหนให้ช่วยดูเพิ่มไหมครับ
-เปิดห้อง: https://admin.example.test/chat?botId=26&amp;conversationId=1317
 TEXT;
 
     /** @var list<MessageLogged> */
@@ -1023,6 +1022,20 @@ TEXT;
         self::assertSame('sent', $result);
         self::assertCount(1, $requests);
         self::assertSame(self::GOLDEN_CLEAN_TEXT, $requests[0]['text']);
+    }
+
+    #[Test]
+    public function draft_card_keeps_room_link_line(): void
+    {
+        // กติกาเจ้านาย 27 พ.ย.: ตัดบรรทัด "เปิดห้อง:" เฉพาะข้อความแจ้งอัตโนมัติ (B2) —
+        // บัตรร่างที่มีปุ่ม ส่ง/ข้าม/แก้ข้อความ ต้องยังมีบรรทัดลิงก์ห้องอยู่ครบ
+        $seed = $this->seedGolden('G3', 0.86, self::CLEAN_CHECK);
+        [, $requests] = $this->publishCapturing($seed['approval_id'], $this->okStub());
+
+        self::assertStringContainsString(
+            'เปิดห้อง: https://admin.example.test/chat?botId=26&amp;conversationId=',
+            $requests[0]['text'],
+        );
     }
 
     #[Test]
